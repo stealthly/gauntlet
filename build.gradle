@@ -1,0 +1,70 @@
+subprojects {
+    apply plugin: 'scala'
+
+    repositories {
+        mavenCentral()
+        maven {
+        	url "https://oss.sonatype.org/content/repositories/public"
+        }
+    }
+
+    dependencies {
+        compile 'org.scala-lang:scala-library:2.10.4'
+        compile 'com.github.scopt:scopt_2.10:3.3.0'
+    }
+}
+
+project("dataset-generator") {
+	version = '1.0'
+
+    jar {
+	    doFirst {
+	        from(configurations.compile.collect { it.isDirectory() ? it : zipTree(it) }) {
+	            exclude "META-INF/*.SF"
+	            exclude "META-INF/*.DSA"
+	            exclude "META-INF/*.RSA"
+	        }
+	    }
+	    manifest.attributes("Main-Class": "ly.stealth.shaihulud.generator.Main")
+	}
+}
+
+project("dataset-producer") {
+    version = '1.0'
+
+    jar {
+        doFirst {
+            from(configurations.compile.collect { it.isDirectory() ? it : zipTree(it) }) {
+                exclude "META-INF/*.SF"
+                exclude "META-INF/*.DSA"
+                exclude "META-INF/*.RSA"
+            }
+        }
+        manifest.attributes("Main-Class": "ly.stealth.shaihulud.datasetproducer.Main")
+    }
+
+    dependencies {
+        compile 'org.apache.kafka:kafka_2.10:0.8.2-beta'
+    }
+}
+
+project("spark-validator") {
+    version = '1.0'
+
+    jar {
+        doFirst {
+            from(configurations.compile.collect { it.isDirectory() ? it : zipTree(it) }) {
+                exclude "META-INF/*.SF"
+                exclude "META-INF/*.DSA"
+                exclude "META-INF/*.RSA"
+            }
+        }
+        manifest.attributes("Main-Class": "ly.stealth.shaihulud.validator.Main")
+    }
+
+    dependencies {
+        compile "org.apache.spark:spark-core_2.10:1.2.0"
+        compile "org.apache.spark:spark-streaming_2.10:1.2.0"
+        compile "org.apache.spark:spark-streaming-kafka_2.10:1.2.0"
+    }
+}
