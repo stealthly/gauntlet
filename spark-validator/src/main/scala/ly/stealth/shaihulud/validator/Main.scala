@@ -17,16 +17,19 @@
 
  package ly.stealth.shaihulud.validator
 
-import _root_.kafka.serializer.StringDecoder
+import java.sql.DriverManager
+import java.util.UUID
+
+import consumer.kafka.MessageAndMetadata
+import consumer.kafka.client.KafkaReceiver
+import org.apache.commons.codec.digest.DigestUtils
 import org.apache.spark._
-import org.apache.spark.streaming._
-import org.apache.spark.SparkContext._
-import org.apache.spark.streaming.StreamingContext._
-import org.apache.spark.streaming.StreamingContext.toPairDStreamFunctions
-import org.apache.spark.rdd._
-import org.apache.spark.streaming.dstream.{ReceiverInputDStream, DStream}
-import org.apache.spark.streaming.kafka.KafkaUtils
 import org.apache.spark.storage.StorageLevel
+import org.apache.spark.streaming.StreamingContext.toPairDStreamFunctions
+import org.apache.spark.streaming._
+import org.apache.spark.streaming.dstream.DStream
+
+import scala.collection.mutable
 
 object Main extends App with Logging {
   val parser = new scopt.OptionParser[ValidatorConfiguration]("spark-validator") {
@@ -43,57 +46,142 @@ object Main extends App with Logging {
     opt[String]("zookeeper") unbounded() required() action { (x, c) =>
       c.copy(zookeeper = x)
     } text ("Zookeeper connection host:port")
+    opt[String]("mysql.connect") unbounded() required() action { (x, c) =>
+      c.copy(mysqlConnect = x)
+    } text ("MySQL connection host:port")
+    opt[String]("mysql.user") unbounded() required() action { (x, c) =>
+      c.copy(mysqlUser = x)
+    } text ("MySQL user")
+    opt[String]("mysql.password") unbounded() required() action { (x, c) =>
+      c.copy(mysqlPassword = x)
+    } text ("MySQL password")
+    opt[String]("mysql.db") unbounded() required() action { (x, c) =>
+      c.copy(mysqlDbName = x)
+    } text ("MySQL database name")
+    opt[Int]("kafka.fetch.size") unbounded() optional() action { (x, c) =>
+      c.copy(kafkaFetchSize = x)
+    } text ("Maximum KBs to fetch from Kafka")
     checkConfig { c =>
-      if (c.sourceTopic.isEmpty || c.destinationTopic.isEmpty || c.zookeeper.isEmpty) failure("You haven't provided all required parameters") else success
+      if (c.sourceTopic.isEmpty || c.destinationTopic.isEmpty || c.zookeeper.isEmpty
+          || c.mysqlConnect.isEmpty || c.mysqlDbName.isEmpty || c.mysqlUser.isEmpty) {
+        failure("You haven't provided all required parameters")
+      } else {
+        success
+      }
                 }
   }
+
   val config = parser.parse(args, ValidatorConfiguration()) match {
     case Some(c) => c
     case None => sys.exit(1)
   }
 
-  val sparkConfig = new SparkConf().setMaster("local[4]").setAppName("kafka-client-validator")
-  val ssc = new StreamingContext(sparkConfig, Seconds(1))
-  val kafkaSourceStreams = createKafkaStream(config.zookeeper, "kafka-client-validator-source", config.sourceTopic, config.partitions)
-  val kafkaDestinationStreams = createKafkaStream(config.zookeeper, "kafka-client-validator-destination", config.destinationTopic, config.partitions)
+  val sparkConfig = new SparkConf().set("spark.serializer", "org.apache.spark.serializer.KryoSerializer")
+  val ssc = new StreamingContext(sparkConfig, Seconds(10))
+  ssc.checkpoint("validator")
+  val testId = UUID.randomUUID().toString
 
-  val sourceSet = new scala.collection.mutable.HashSet[String]()
-  val destinationSet = new scala.collection.mutable.HashSet[String]()
-  kafkaSourceStreams.cogroup(kafkaDestinationStreams).foreachRDD(rdd => {
-    rdd.collect().foreach(entry => {
-      entry._2._1.foreach(sourceSet.+=(_))
-      entry._2._2.foreach(destinationSet.+=(_))
-    })
-  })
+  startStreamForTopic(config.sourceTopic, config)
+  startStreamForTopic(config.destinationTopic, config)
+
+  val conn = DriverManager.getConnection("jdbc:mysql://%s/%s?user=%s&password=%s".format(config.mysqlConnect,
+                                                                                         config.mysqlDbName,
+                                                                                         config.mysqlUser,
+                                                                                         config.mysqlPassword))
+
+  val statement = conn.createStatement
+  statement.execute("CREATE TABLE IF NOT EXISTS kafka_spark_validator(test_id varchar(255) not null, topic varchar(255) not null, total int not null, order_hash varchar(255),  primary key(test_id, topic))")
+  statement.execute("INSERT INTO kafka_spark_validator VALUES('%s', '%s', %d, '%s')".format(testId, config.sourceTopic, 0, ""))
+  statement.execute("INSERT INTO kafka_spark_validator VALUES('%s', '%s', %d, '%s')".format(testId, config.destinationTopic, 0, ""))
 
   ssc.start()
-  ssc.awaitTermination(60000)
+  ssc.awaitTermination()
 
-  val success = sourceSet.forall(destinationSet.contains(_))
+  def startStreamForTopic(topic: String, config: ValidatorConfiguration) {
+    val stream = createKafkaStream(config.zookeeper, topic, config.partitions).repartition(config.partitions).map(rdd => {
+      (rdd.getPartition.partition, new String(rdd.getPayload))
+    }).persist(StorageLevel.MEMORY_AND_DISK_SER)
 
-  println("******** TEST RESULTS ********")
-  if (success) {
-    println("TEST PASSED")
-  } else {
-    System.err.println("TEST FAILED")
+    stream.count().foreachRDD(rdd => {
+      if (rdd.count() > 0) {
+        val conn = DriverManager.getConnection("jdbc:mysql://%s/%s?user=%s&password=%s".format(config.mysqlConnect,
+                                                                                               config.mysqlDbName,
+                                                                                               config.mysqlUser,
+                                                                                               config.mysqlPassword))
+        val totalUpdate = conn.prepareStatement("UPDATE kafka_spark_validator SET total = total + ?  WHERE test_id = ? AND topic = ?")
+
+        totalUpdate.setLong(1, rdd.first())
+        totalUpdate.setString(2, testId)
+        totalUpdate.setString(3, topic)
+        totalUpdate.execute()
+        totalUpdate.close()
+      }
+    })
+
+    val initial: mutable.Map[Int, mutable.MutableList[String]] = mutable.HashMap[Int, mutable.MutableList[String]]()
+    val messageAccumulator = ssc.sparkContext.accumulator(initial, topic)(PartitionMessageAccumulatorParam)
+    stream.foreachRDD(rdd => {
+      val messageMap = new mutable.HashMap[Int, mutable.MutableList[String]]
+      for ((partition, message) <- rdd.collect()) {
+        if (!messageMap.contains(partition)) {
+          messageMap.put(partition, new mutable.MutableList[String]())
+        }
+        messageMap(partition) += message
+      }
+      messageAccumulator.add(messageMap)
+
+      val hash = DigestUtils.md5Hex(messageAccumulator.value.map(_._2.mkString("")).mkString(""))
+      val conn = DriverManager.getConnection("jdbc:mysql://%s/%s?user=%s&password=%s".format(config.mysqlConnect,
+                                                                                             config.mysqlDbName,
+                                                                                             config.mysqlUser,
+                                                                                             config.mysqlPassword))
+      val orderUpdate = conn.prepareStatement("UPDATE kafka_spark_validator SET order_hash = ? WHERE test_id = ? AND topic = ?")
+      orderUpdate.setString(1, hash)
+      orderUpdate.setString(2, testId)
+      orderUpdate.setString(3, topic)
+      orderUpdate.execute()
+      orderUpdate.close()
+    })
   }
-  println("All source topic entries were reflected into destination topic: %B".format(success))
-  println("Amount of entries in source topic: %d".format(sourceSet.size))
-  println("Amount of entries in destination topic: %d".format(destinationSet.size))
-  println("Amount of duplicates in destination topic: %d".format(Math.max(destinationSet.size - sourceSet.size, 0)))
 
-  ssc.stop()
-
-  def createKafkaStream(zkConnect: String, consumerGroup: String, topic: String, partitions: Int): ReceiverInputDStream[(String, String)] = {
-    val kafkaParams = Map("zookeeper.connect" -> zkConnect,
-                          "group.id" -> consumerGroup,
-                          "zookeeper.connection.timeout.ms" -> "1000",
-                          "auto.offset.reset" -> "smallest")
-
-    val topics: Map[String, Int] = Map(topic -> partitions)
-    KafkaUtils.createStream[String, String, StringDecoder, StringDecoder](ssc, kafkaParams, topics, StorageLevel.MEMORY_ONLY)
+  private def createKafkaStream(zkConnect: String, topic: String, partitions: Int): DStream[MessageAndMetadata] = {
+    val zkhosts = zkConnect.split(":")(0)
+    val zkports = zkConnect.split(":")(1)
+    val kafkaParams = Map("zookeeper.hosts" -> zkhosts,
+                          "zookeeper.port" -> zkports,
+                          "zookeeper.consumer.connection" -> zkConnect,
+                          "zookeeper.broker.path" -> "/brokers",
+                          "zookeeper.consumer.path" -> "/consumers",
+                          "fetch.size.bytes" -> (config.kafkaFetchSize * 1024).toString,
+                          "kafka.topic" -> topic,
+                          "kafka.consumer.id" -> "%s-%s".format(topic, UUID.randomUUID().toString))
+    val props = new java.util.Properties()
+    kafkaParams foreach { case (key, value) => props.put(key, value)}
+    val streams = (0 to partitions - 1).map { partitionId => ssc.receiverStream(new KafkaReceiver(StorageLevel.MEMORY_AND_DISK_SER, props, partitionId))}
+    ssc.union(streams)
   }
 }
 
 case class ValidatorConfiguration(sourceTopic: String = "", destinationTopic: String = "",
-                                  partitions: Int = 1, zookeeper: String = "")
+                                  partitions: Int = 1, zookeeper: String = "", mysqlUser: String = "",
+                                  mysqlPassword: String = "", mysqlDbName: String = "", mysqlConnect: String = "",
+                                  kafkaFetchSize: Int = 8)
+
+object PartitionMessageAccumulatorParam extends AccumulatorParam[mutable.Map[Int, mutable.MutableList[String]]] {
+  def addInPlace(r1: mutable.Map[Int, mutable.MutableList[String]], r2: mutable.Map[Int, mutable.MutableList[String]]): mutable.Map[Int, mutable.MutableList[String]] = {
+    for ((partition, messages) <- r2) {
+      if (!r1.contains(partition)) {
+        r1.put(partition, new mutable.MutableList[String]())
+      }
+      for (message <- messages) {
+        r1(partition) += message
+      }
+    }
+
+    r1
+  }
+
+  def zero(initialValue: mutable.Map[Int, mutable.MutableList[String]]): mutable.Map[Int, mutable.MutableList[String]] = {
+    new mutable.HashMap[Int, mutable.MutableList[String]]
+  }
+}
