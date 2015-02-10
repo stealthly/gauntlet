@@ -19,6 +19,7 @@
 
 import java.net._
 import java.io.{FileInputStream, File}
+import java.nio.file.{Paths, Files}
 import java.util.Properties
 import kafka.producer.{KeyedMessage, Producer, ProducerConfig}
 import scala.io.Source
@@ -103,7 +104,7 @@ case class DatasetProducer(config: DatasetProducerConfig) {
     props.load(new FileInputStream(this.config.producerProperties.get))
     val producer = new Producer[Any, Any](new ProducerConfig(props))
     do {
-      Source.fromFile(this.config.filename).getLines().foreach { line =>
+      Source.fromFile(this.config.filename, "UTF-8").getLines().foreach { line =>
         if (this.stopRequested) {
           producer.close()
           return
