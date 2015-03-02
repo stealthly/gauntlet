@@ -10,8 +10,8 @@ export CASSANDRA_PASSWORD="cassandra"
 export ZK_CONNECT="localhost:2181"
 
 export KAFKA_CONNECT="localhost:9092"
-export KAFKA_SOURCE_TOPIC="dataset5"
-export KAFKA_DESTINATION_TOPIC="mirror_dataset5"
+export KAFKA_SOURCE_TOPIC="dataset"
+export KAFKA_DESTINATION_TOPIC="mirror_dataset"
 export KAFKA_FETCH_SIZE="64"
 export KAFKA_NUM_TOPIC_PARTITIONS="1"
 

@@ -64,33 +64,34 @@ object Main extends App with Logging {
   val test = Test(config.testId, config.sourceTopic, config.destinationTopic)
   val poisonPill = UUID.randomUUID().toString.getBytes("UTF8")
 
-  markStreamEnd()
+  markStreamEnd(poisonPill)
 
   ssc.sparkContext.parallelize(Seq(test)).saveToCassandra("kafka_client_validation", "tests")
   val acc = ssc.sparkContext.accumulator[Int](0, "finishedPartitions")
 
-  startStreamForTopic(test.test_id, config.sourceTopic, config, poisonPill)
-  startStreamForTopic(test.test_id, config.destinationTopic, config, poisonPill)
+  val validator = new Validator(config, cassandraConnector.hosts)
+
+  startStreamForTopic(test.test_id, config.sourceTopic, config, poisonPill, validator)
+  startStreamForTopic(test.test_id, config.destinationTopic, config, poisonPill, validator)
 
   ssc.start()
   ssc.awaitTermination()
 
-  val validator = new Validator(config, cassandraConnector.hosts)
-  validator.validate()
-
-  def markStreamEnd(): Unit = {
+  def markStreamEnd(poisonPill: Array[Byte]) {
     //Producing poison pill message to each partition of specified source topic in order to determine end of the stream
     val props = new Properties()
     props.put("metadata.broker.list", config.brokerList)
     props.put("producer.type", "sync")
     val producerConfig = new ProducerConfig(props)
     val producer = new Producer[Array[Byte], Array[Byte]](producerConfig)
-    (0 until config.partitions - 1).foreach(partition => {
+    (0 until config.partitions).foreach(partition => {
       producer.send(new KeyedMessage(config.sourceTopic, null, partition, poisonPill))
+      producer.send(new KeyedMessage(config.destinationTopic, null, partition, poisonPill))
+      logInfo("Marked stream end for partition %d with sequence %s".format(partition, poisonPill))
     })
   }
 
-  def startStreamForTopic(testId: String, topic: String, config: ReaderConfiguration, poisonPill: Array[Byte]) {
+  def startStreamForTopic(testId: String, topic: String, config: ReaderConfiguration, poisonPill: Array[Byte], validator: Validator) {
     val stream = createKafkaStream(config.zookeeper, topic, config.partitions).repartition(config.partitions).persist(StorageLevel.MEMORY_AND_DISK_SER)
     stream.map(message => {
       Counter(testId, message.getTopic, 1L)
@@ -101,17 +102,18 @@ object Main extends App with Logging {
     })
 
     stream.map(message => {
-      if (java.util.Arrays.equals(message.getPayload, poisonPill)) {
-        acc.add(1)
-        if (acc.value == config.partitions) {
+      Message(testId, message.getTopic, message.getPartition.partition, message.getOffset, new String(message.getPayload))
+    }).foreachRDD(rdd => {
+      val filtered = rdd.filter(message => !java.util.Arrays.equals(message.payload.getBytes("UTF8"), poisonPill))
+      filtered.saveToCassandra("kafka_client_validation", "messages")
+      if (rdd.count() > filtered.count()) {
+        logInfo("End of the stream reached")
+        acc.add((rdd.count() - filtered.count()).toInt)
+        if (acc.value == config.partitions * 2) {
+          validator.validate()
           ssc.stop(true)
         }
-        None
-      } else {
-        Some(Message(testId, message.getTopic, message.getPartition.partition, message.getOffset, new String(message.getPayload)))
       }
-    }).filter(_.isDefined).map(_.get).foreachRDD(rdd => {
-      rdd.saveToCassandra("kafka_client_validation", "messages")
     })
   }
 

@@ -2,8 +2,8 @@
 
 ./gradlew jar
 
-export DATASET_FILE_NAME="dataset5"
-export DATASET_SIZE="500000000"
+export DATASET_FILE_NAME="dataset"
+export DATASET_SIZE="10000000"
 export DATASET_MIN_LENGTH="1024"
 export DATASET_MAX_LENGTH="5000"
 
@@ -11,7 +11,7 @@ export PRODUCER_CONFIG="producer.properties"
 
 export ZK_CONNECT="localhost:2181"
 export KAFKA_CONNECT="localhost:9092"
-export KAFKA_TOPIC="dataset5"
+export KAFKA_TOPIC="dataset"
 
 export CLIENT_LAUNCH_COMMAND="~/gopath/src/github.com/stealthly/go_kafka_client/mirrormaker/mirrormaker --prefix mirror_ --consumer.config ~/gopath/src/github.com/stealthly/go_kafka_client/mirrormaker/consumer.config --num.streams 2 --producer.config ~/gopath/src/github.com/stealthly/go_kafka_client/mirrormaker/producer.config --whitelist=\"^$KAFKA_TOPIC\""
 
