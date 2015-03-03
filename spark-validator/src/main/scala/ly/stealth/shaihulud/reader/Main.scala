@@ -18,24 +18,30 @@ import org.apache.spark.SparkConf
 object Main extends App with Logging {
   val parser = new scopt.OptionParser[ReaderConfiguration]("spark-reader") {
     head("Spark Reader for Kafka client applications", "1.0")
-    opt[String]("source") unbounded() required() action { (x, c) =>
-      c.copy(sourceTopic = x)
+    opt[String]("source") unbounded() required() action { (value, config) =>
+      config.copy(sourceTopic = value)
     } text ("Source topic with initial set of data")
-    opt[String]("destination") unbounded() required() action { (x, c) =>
-      c.copy(destinationTopic = x)
+    opt[String]("destination") unbounded() required() action { (value, config) =>
+      config.copy(destinationTopic = value)
     } text ("Destination topic with processed set of data")
-    opt[Int]("partitions") unbounded() optional() action { (x, c) =>
-      c.copy(partitions = x)
+    opt[Int]("partitions") unbounded() optional() action { (value, config) =>
+      config.copy(partitions = value)
     } text ("Partitions in topic")
-    opt[String]("zookeeper") unbounded() required() action { (x, c) =>
-      c.copy(zookeeper = x)
+    opt[String]("zookeeper") unbounded() required() action { (value, config) =>
+      config.copy(zookeeper = value)
     } text ("Zookeeper connection host:port")
-    opt[String]("broker.list") unbounded() required() action { (x, c) =>
-      c.copy(brokerList = x)
+    opt[String]("broker.list") unbounded() required() action { (value, config) =>
+      config.copy(brokerList = value)
     } text ("Comma separated string of host:port")
-    opt[Int]("kafka.fetch.size") unbounded() optional() action { (x, c) =>
-      c.copy(kafkaFetchSize = x)
+    opt[Int]("kafka.fetch.size") unbounded() optional() action { (value, config) =>
+      config.copy(kafkaFetchSize = value)
     } text ("Maximum KBs to fetch from Kafka")
+    opt[String]("executor.uri") optional() action { (value, config) =>
+      config.copy(executorUri = value)
+    } text("Path to the Spark binary")
+    opt[String]("mesos.coarse") optional() action { (value, config) =>
+      config.copy(coarseGrain = value)
+    } text("Run mode for Spark on Mesos, set to 'false' for fine-grain.")
     checkConfig { c =>
       if (c.testId.isEmpty || c.sourceTopic.isEmpty || c.destinationTopic.isEmpty || c.zookeeper.isEmpty || c.brokerList.isEmpty) {
         failure("You haven't provided all required parameters")
@@ -51,8 +57,10 @@ object Main extends App with Logging {
 
   val sparkConfig = new SparkConf().setAppName("kafka_client_validator")
     .set("spark.serializer", "org.apache.spark.serializer.KryoSerializer")
+    .set("spark.mesos.coarse", config.coarseGrain)
+    .set("spark.executor.uri", config.executorUri)
   val ssc = new StreamingContext(sparkConfig, Seconds(10))
-  ssc.checkpoint("reader")
+  ssc.checkpoint("spark-validator")
 
   val cassandraConnector = CassandraConnector(sparkConfig)
   cassandraConnector.withSessionDo(session => {
@@ -78,7 +86,8 @@ object Main extends App with Logging {
   ssc.awaitTermination()
 
   def markStreamEnd(poisonPill: Array[Byte]) {
-    //Producing poison pill message to each partition of specified source topic in order to determine end of the stream
+    //Producing poison pill message to each partition of specified source and destination topics
+    //in order to determine end of the stream
     val props = new Properties()
     props.put("metadata.broker.list", config.brokerList)
     props.put("producer.type", "sync")
@@ -142,4 +151,6 @@ case class Counter(test_id: String = "", topic: String = "", total: Long = 0L)
 case class Message(test_id: String = "", topic: String = "", partition: Int = 0, offset: Long = 0, payload: String = "")
 
 case class ReaderConfiguration(testId: String = UUID.randomUUID().toString, sourceTopic: String = "", destinationTopic: String = "",
-                               partitions: Int = 1, zookeeper: String = "", brokerList: String = "", kafkaFetchSize: Int = 8)
+                               partitions: Int = 1, zookeeper: String = "", brokerList: String = "", kafkaFetchSize: Int = 8,
+                               executorUri: String = "https://dist.apache.org/repos/dist/release/spark/spark-1.2.1/spark-1.2.1-bin-cdh4.tgz",
+                               coarseGrain: String = "true")
