@@ -48,7 +48,7 @@ project("dataset-producer") {
     }
 }
 
-project("spark-reader") {
+project("spark-validator") {
     version = '1.0'
 
     jar {
@@ -67,29 +67,11 @@ project("spark-reader") {
         compile("org.apache.kafka:kafka_2.10:0.8.1.1") {
             exclude module: "zookeeper"
         }
+        compile "com.datastax.cassandra:cassandra-driver-core:2.1.4"
         compile("com.datastax.spark:spark-cassandra-connector-java_2.10:1.2.0-alpha1")
         compile("com.googlecode.json-simple:json-simple:1.1.1")
         compile("com.101tec:zkclient:0.4")
         compile("com.yammer.metrics:metrics-core:2.2.0")
         compile files("libs/kafka-spark-consumer-0.0.1-SNAPSHOT.jar")
-    }
-}
-
-project("validator") {
-    version = '1.0'
-
-    jar {
-        doFirst {
-            from(configurations.compile.collect { it.isDirectory() ? it : zipTree(it) }) {
-                exclude "META-INF/*.SF"
-                exclude "META-INF/*.DSA"
-                exclude "META-INF/*.RSA"
-            }
-        }
-        manifest.attributes("Main-Class": "ly.stealth.shaihulud.validator.Main")
-    }
-
-    dependencies {
-        compile "com.datastax.cassandra:cassandra-driver-core:2.1.4"
     }
 }

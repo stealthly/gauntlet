@@ -1,2 +1,2 @@
-include 'dataset-generator', 'dataset-producer', 'spark-reader', 'validator'
+include 'dataset-generator', 'dataset-producer', 'spark-validator'
 
