@@ -26,10 +26,6 @@ case $key in
     SPARK_PATH="$2"
     shift
     ;;
-    --spark.master)
-    SPARK_MASTER_URL="$2"
-    shift
-    ;;
     --cassandra.host)
     CASSANDRA_HOST="$2"
     shift
@@ -85,4 +81,4 @@ esac
 shift
 done
 
-eval "$SPARK_PATH/bin/spark-submit --conf spark.cassandra.connection.host=$CASSANDRA_HOST --conf spark.cassandra.auth.username=$CASSANDRA_USER --conf spark.cassandra.auth.password=$CASSANDRA_PASSWORD --executor-memory 4G --total-executor-cores 8 --class ly.stealth.shaihulud.reader.Main --master $MESOS_MASTER_URL spark-validator/build/libs/spark-validator-1.0.jar --source $KAFKA_SOURCE_TOPIC --destination $KAFKA_DESTINATION_TOPIC --partitions $KAFKA_NUM_TOPIC_PARTITIONS --zookeeper $ZK_CONNECT --broker.list $KAFKA_CONNECT --kafka.fetch.size $KAFKA_FETCH_SIZE --executor.uri $SPARK_EXECUTOR_URI --mesos.coarse $MESOS_COARSE_GRAINED 1> spark-validator.out 2> spark-validator.err"
+eval "$SPARK_PATH/bin/spark-submit --conf spark.cassandra.connection.host=$CASSANDRA_HOST --conf spark.cassandra.auth.username=$CASSANDRA_USER --conf spark.cassandra.auth.password=$CASSANDRA_PASSWORD --executor-memory 4G --total-executor-cores 8 --class ly.stealth.shaihulud.reader.Main --master $MESOS_MASTER_URL spark-validator/build/libs/spark-validator-1.0.jar --source $KAFKA_SOURCE_TOPIC --destination $KAFKA_DESTINATION_TOPIC --partitions $KAFKA_NUM_TOPIC_PARTITIONS --zookeeper $ZK_CONNECT --broker.list $KAFKA_CONNECT --kafka.fetch.size $KAFKA_FETCH_SIZE --executor.uri $MESOS_EXECUTOR_URI --mesos.coarse $MESOS_COARSE_GRAINED 1> spark-validator.out 2> spark-validator.err"
