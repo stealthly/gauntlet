@@ -1,4 +1,4 @@
-#!/bin/sh
+#!/bin/bash
 
 export DATASET_FILE_NAME="dataset"
 export DATASET_SIZE="10000000"
