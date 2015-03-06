@@ -1,5 +1,9 @@
 package ly.stealth.shaihulud.reader
 
+import java.io.ByteArrayOutputStream
+import java.nio.ByteBuffer
+import java.sql.Timestamp
+import java.util
 import java.util.{Properties, UUID}
 
 import com.datastax.spark.connector._
@@ -7,8 +11,8 @@ import com.datastax.spark.connector.cql.CassandraConnector
 import consumer.kafka.MessageAndMetadata
 import consumer.kafka.client.KafkaReceiver
 import kafka.producer.{KeyedMessage, ProducerConfig, Producer}
-import org.apache.avro.io.DecoderFactory
-import org.apache.avro.specific.SpecificDatumReader
+import org.apache.avro.io.{EncoderFactory, DecoderFactory}
+import org.apache.avro.specific.{SpecificDatumWriter, SpecificDatumReader}
 import org.apache.spark._
 import org.apache.spark.storage.StorageLevel
 import org.apache.spark.streaming._
@@ -96,13 +100,34 @@ object Main extends App with Logging {
     val props = new Properties()
     props.put("metadata.broker.list", config.brokerList)
     props.put("producer.type", "sync")
+
     val producerConfig = new ProducerConfig(props)
     val producer = new Producer[Array[Byte], Array[Byte]](producerConfig)
-    (0 until config.partitions).foreach(partition => {
-      producer.send(new KeyedMessage(config.sourceTopic, null, partition, poisonPill))
-      producer.send(new KeyedMessage(config.destinationTopic, null, partition, poisonPill))
-      logInfo("Marked stream end for partition %d with sequence %s".format(partition, poisonPill))
-    })
+    if (config.avro) {
+      val timings: java.util.Map[java.lang.String, java.lang.Long] = new java.util.HashMap[java.lang.String, java.lang.Long]
+      val messageBuilder = gauntlet.avro.Message.newBuilder().setTimings(timings)
+      val encoderOut = new ByteArrayOutputStream()
+      val encoder = EncoderFactory.get().binaryEncoder(encoderOut, null)
+      val datumWriter = new SpecificDatumWriter[gauntlet.avro.Message](gauntlet.avro.Message.getClassSchema)
+      (0 until config.partitions).foreach(partition => {
+        messageBuilder.setMessage(ByteBuffer.wrap(poisonPill))
+        messageBuilder.getTimings.put("created", new Timestamp(System.currentTimeMillis()).getTime)
+        datumWriter.write(messageBuilder.build(), encoder)
+        encoder.flush()
+
+        val bytes = encoderOut.toByteArray
+        producer.send(new KeyedMessage(config.sourceTopic, null, partition, bytes))
+        producer.send(new KeyedMessage(config.destinationTopic, null, partition, bytes))
+        logInfo("Marked stream end for partition %d with sequence %s".format(partition, bytes))
+        encoderOut.reset()
+      })
+    } else {
+      (0 until config.partitions).foreach(partition => {
+        producer.send(new KeyedMessage(config.sourceTopic, null, partition, poisonPill))
+        producer.send(new KeyedMessage(config.destinationTopic, null, partition, poisonPill))
+        logInfo("Marked stream end for partition %d with sequence %s".format(partition, poisonPill))
+      })
+    }
   }
 
   def startStreamForTopic(testId: String, topic: String, config: ReaderConfiguration, poisonPill: Array[Byte], validator: Validator) {
