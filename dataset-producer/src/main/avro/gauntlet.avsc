@@ -1,0 +1,8 @@
+{"namespace": "gauntlet.avro",
+ "type": "record",
+ "name": "Message",
+ "fields": [
+     {"name": "message", "type": "bytes"},
+     {"name": "timings", "type": {"type": "map", "values": "long"}}
+ ]
+}

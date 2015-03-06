@@ -1,5 +1,12 @@
+plugins {
+    id "com.commercehub.gradle.plugin.avro" version "0.3.4"
+}
+
+apply plugin: "idea"
+
 subprojects {
     apply plugin: 'scala'
+    apply plugin: "com.commercehub.gradle.plugin.avro"
 
     repositories {
         mavenCentral()
@@ -45,6 +52,7 @@ project("dataset-producer") {
 
     dependencies {
         compile 'org.apache.kafka:kafka_2.10:0.8.2-beta'
+        compile 'org.apache.avro:avro:1.7.5'
     }
 }
 
@@ -63,11 +71,17 @@ project("spark-validator") {
     }
 
     dependencies {
-        compile("org.apache.spark:spark-streaming_2.10:1.2.0")
+        compile("org.apache.avro:avro:1.7.5")
+        compile("org.apache.spark:spark-core_2.10:1.2.0") {
+            exclude module: "avro"
+        }
+        compile("org.apache.spark:spark-streaming_2.10:1.2.0") {
+            exclude module: "avro"
+        }
         compile("org.apache.kafka:kafka_2.10:0.8.1.1") {
             exclude module: "zookeeper"
         }
-        compile "com.datastax.cassandra:cassandra-driver-core:2.1.4"
+        compile("com.datastax.cassandra:cassandra-driver-core:2.1.4")
         compile("com.datastax.spark:spark-cassandra-connector-java_2.10:1.2.0-alpha1")
         compile("com.googlecode.json-simple:json-simple:1.1.1")
         compile("com.101tec:zkclient:0.4")

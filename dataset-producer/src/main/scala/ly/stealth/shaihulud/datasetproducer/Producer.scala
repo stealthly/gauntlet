@@ -5,7 +5,7 @@
  * The ASF licenses this file to You under the Apache License, Version 2.0
  * (the "License"); you may not use this file except in compliance with
  * the License.  You may obtain a copy of the License at
- * 
+ *
  *    http://www.apache.org/licenses/LICENSE-2.0
  *
  * Unless required by applicable law or agreed to in writing, software
@@ -15,13 +15,19 @@
  * limitations under the License.
  */
 
- package ly.stealth.shaihulud.datasetproducer
+package ly.stealth.shaihulud.datasetproducer
 
 import java.net._
-import java.io.{FileInputStream, File}
-import java.nio.file.{Paths, Files}
+import java.io.{ByteArrayOutputStream, FileInputStream, File}
+import java.nio.ByteBuffer
+import java.nio.charset.{Charset}
+import java.sql.Timestamp
+import java.util
 import java.util.Properties
+import gauntlet.avro.Message
 import kafka.producer.{KeyedMessage, Producer, ProducerConfig}
+import org.apache.avro.io.EncoderFactory
+import org.apache.avro.specific.SpecificDatumWriter
 import scala.io.Source
 import scala.util.{Failure, Success, Try}
 
@@ -69,6 +75,11 @@ object Main {
         (value, config) =>
           config.copy(loop = value)
       }
+
+      opt[Boolean]("avro").text("Wrap each message into avro schema.").action {
+        (value, config) =>
+          config.copy(avro = value)
+      }
     }
 
     parser.parse(args, DatasetProducerConfig()) match {
@@ -87,7 +98,7 @@ object Main {
   }
 }
 
-case class DatasetProducerConfig(filename: String = "", kafka: Option[String] = None, producerProperties: Option[File] = None, topic: Option[String] = None, syslog: Option[String] = None, loop: Boolean = false)
+case class DatasetProducerConfig(filename: String = "", kafka: Option[String] = None, producerProperties: Option[File] = None, topic: Option[String] = None, syslog: Option[String] = None, loop: Boolean = false, avro: Boolean = false)
 
 case class DatasetProducer(config: DatasetProducerConfig) {
   var stopRequested = false
@@ -103,14 +114,32 @@ case class DatasetProducer(config: DatasetProducerConfig) {
     val props = new Properties()
     props.load(new FileInputStream(this.config.producerProperties.get))
     val producer = new Producer[Any, Any](new ProducerConfig(props))
+
+    val timings: util.Map[java.lang.String, java.lang.Long] = new util.HashMap[java.lang.String, java.lang.Long]
+    val messageBuilder = Message.newBuilder().setTimings(timings)
+
+    val encoderOut = new ByteArrayOutputStream()
+    val encoder = EncoderFactory.get().binaryEncoder(encoderOut, null)
+    val datumWriter = new SpecificDatumWriter[Message](Message.getClassSchema)
+    val charset = Charset.forName("UTF-8")
+
     do {
       Source.fromFile(this.config.filename, "UTF-8").getLines().foreach { line =>
         if (this.stopRequested) {
           producer.close()
           return
         }
-        val sendData = line.getBytes("UTF-8")
-        producer.send(new KeyedMessage(this.config.topic.get, sendData))
+        if (config.avro) {
+          messageBuilder.setMessage(ByteBuffer.wrap(line.getBytes))
+          messageBuilder.getTimings().put("created", new Timestamp(System.currentTimeMillis()).getTime)
+          datumWriter.write(messageBuilder.build(), encoder)
+          encoder.flush()
+          producer.send(new KeyedMessage(this.config.topic.get, encoderOut.toByteArray))
+          encoderOut.reset()
+        } else {
+          val sendData = line.getBytes("UTF-8")
+          producer.send(new KeyedMessage(this.config.topic.get, sendData))
+        }
       }
       Thread.sleep(1) // this helps avoid "Too many open files" exception on small files
     } while (this.config.loop)

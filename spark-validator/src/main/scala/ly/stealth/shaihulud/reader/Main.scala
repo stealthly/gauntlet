@@ -7,6 +7,8 @@ import com.datastax.spark.connector.cql.CassandraConnector
 import consumer.kafka.MessageAndMetadata
 import consumer.kafka.client.KafkaReceiver
 import kafka.producer.{KeyedMessage, ProducerConfig, Producer}
+import org.apache.avro.io.DecoderFactory
+import org.apache.avro.specific.SpecificDatumReader
 import org.apache.spark._
 import org.apache.spark.storage.StorageLevel
 import org.apache.spark.streaming._
@@ -42,6 +44,9 @@ object Main extends App with Logging {
     opt[String]("mesos.coarse") optional() action { (value, config) =>
       config.copy(coarseGrain = value)
     } text("Run mode for Spark on Mesos, set to 'false' for fine-grain.")
+    opt[Boolean]("avro") optional() action { (value, config) =>
+      config.copy(avro = value)
+    } text("Try to decode messages with avro schema.")
     checkConfig { c =>
       if (c.testId.isEmpty || c.sourceTopic.isEmpty || c.destinationTopic.isEmpty || c.zookeeper.isEmpty || c.brokerList.isEmpty) {
         failure("You haven't provided all required parameters")
@@ -55,7 +60,7 @@ object Main extends App with Logging {
     case None => sys.exit(1)
   }
 
-  val sparkConfig = new SparkConf().setAppName("kafka_client_validator")
+  val sparkConfig = new SparkConf().setAppName("kafka_client_validator").setMaster("local[8]")
     .set("spark.serializer", "org.apache.spark.serializer.KryoSerializer")
     .set("spark.mesos.coarse", config.coarseGrain)
     .set("spark.executor.uri", config.executorUri)
@@ -67,7 +72,7 @@ object Main extends App with Logging {
     session.execute("CREATE KEYSPACE IF NOT EXISTS kafka_client_validation WITH REPLICATION = {'class': 'SimpleStrategy', 'replication_factor': 1}")
     session.execute("CREATE TABLE IF NOT EXISTS kafka_client_validation.tests(test_id text PRIMARY KEY, source_topic text, destination_topic text)")
     session.execute("CREATE TABLE IF NOT EXISTS kafka_client_validation.counters(test_id text, topic text, total counter, PRIMARY KEY(test_id, topic))")
-    session.execute("CREATE TABLE IF NOT EXISTS kafka_client_validation.messages(test_id text, topic text, partition int, offset int, payload text, PRIMARY KEY(test_id, topic, partition, offset))")
+    session.execute("CREATE TABLE IF NOT EXISTS kafka_client_validation.messages(test_id text, topic text, partition int, offset int, payload text, tags map<text, timestamp>, PRIMARY KEY(test_id, topic, partition, offset))")
   })
   val test = Test(config.testId, config.sourceTopic, config.destinationTopic)
   val poisonPill = UUID.randomUUID().toString.getBytes("UTF8")
@@ -111,7 +116,17 @@ object Main extends App with Logging {
     })
 
     stream.map(message => {
-      Message(testId, message.getTopic, message.getPartition.partition, message.getOffset, new String(message.getPayload))
+      val msg = Message(testId, message.getTopic, message.getPartition.partition, message.getOffset, new String(message.getPayload))
+      if (config.avro && message.getPayload.length > 0) {
+        //TODO: to switch to Twitter chill, since this approach is not the best option
+        val datumReader = new SpecificDatumReader[gauntlet.avro.Message](gauntlet.avro.Message.getClassSchema)
+        val decoder = DecoderFactory.get().binaryDecoder(message.getPayload, null)
+        val avroMessage: gauntlet.avro.Message = datumReader.read(null, decoder)
+
+        msg.payload = avroMessage.getMessage.toString
+        msg.tags = avroMessage.getTimings
+      }
+      msg
     }).foreachRDD(rdd => {
       val filtered = rdd.filter(message => !java.util.Arrays.equals(message.payload.getBytes("UTF8"), poisonPill))
       filtered.saveToCassandra("kafka_client_validation", "messages")
@@ -148,9 +163,11 @@ case class Test(test_id: String = "", source_topic: String = "", destination_top
 
 case class Counter(test_id: String = "", topic: String = "", total: Long = 0L)
 
-case class Message(test_id: String = "", topic: String = "", partition: Int = 0, offset: Long = 0, payload: String = "")
+case class Message(test_id: String = "", topic: String = "", partition: Int = 0, offset: Long = 0, var payload: String = "",
+                   var tags: java.util.Map[java.lang.String, java.lang.Long] = new java.util.HashMap[java.lang.String, java.lang.Long])
 
 case class ReaderConfiguration(testId: String = UUID.randomUUID().toString, sourceTopic: String = "", destinationTopic: String = "",
                                partitions: Int = 1, zookeeper: String = "", brokerList: String = "", kafkaFetchSize: Int = 8,
                                executorUri: String = "https://dist.apache.org/repos/dist/release/spark/spark-1.2.1/spark-1.2.1-bin-cdh4.tgz",
-                               coarseGrain: String = "true")
+                               coarseGrain: String = "true",
+                               avro: Boolean = false)

@@ -62,6 +62,6 @@ shift
 done
 
 eval "java -jar dataset-generator/build/libs/dataset-generator-1.0.jar --filename $DATASET_FILE_NAME --filesize $DATASET_SIZE --min.length $DATASET_MIN_LENGTH --max.length $DATASET_MAX_LENGTH"
-eval "java -jar dataset-producer/build/libs/dataset-producer-1.0.jar --filename $DATASET_FILE_NAME --kafka $KAFKA_CONNECT --topic $KAFKA_TOPIC --producer.config $PRODUCER_CONFIG"
+eval "java -jar dataset-producer/build/libs/dataset-producer-1.0.jar --filename $DATASET_FILE_NAME --kafka $KAFKA_CONNECT --topic $KAFKA_TOPIC --producer.config $PRODUCER_CONFIG --avro false"
 
 eval $CLIENT_LAUNCH_COMMAND
