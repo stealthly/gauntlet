@@ -1,0 +1,26 @@
+{
+    "type": "record",
+    "name": "message",
+    "fields": [
+        {
+            "name": "id",
+            "type": "int"
+        },
+        {
+            "name": "value",
+            "type": "bytes"
+        },
+        {
+            "name": "timings",
+            "doc": "Timings",
+            "default": "null",
+            "type": [
+                "null",
+                {
+                    "type": "array",
+                    "items": "long"
+                }
+            ]
+        }
+    ]
+}

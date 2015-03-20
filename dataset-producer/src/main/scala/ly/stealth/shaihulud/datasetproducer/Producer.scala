@@ -17,18 +17,18 @@
 
 package ly.stealth.shaihulud.datasetproducer
 
-import java.io.{File, FileInputStream}
+import java.io.{EOFException, File, FileInputStream, IOException}
 import java.net._
-import java.nio.ByteBuffer
 import java.nio.file._
 import java.nio.file.attribute.BasicFileAttributes
 import java.util.Properties
 
-import io.confluent.kafka.schemaregistry.client.CachedSchemaRegistryClient
 import kafka.producer.{KeyedMessage, Producer}
 import org.apache.avro.Schema
 import org.apache.avro.generic.{GenericDatumReader, GenericRecord}
 import org.apache.avro.io.DecoderFactory
+import org.apache.kafka.clients.producer.{KafkaProducer, ProducerConfig, ProducerRecord}
+import org.apache.kafka.common.KafkaException
 
 import scala.collection._
 import scala.io.Source
@@ -89,7 +89,7 @@ object Main {
           config.copy(schemaPath = Some(value))
       }
 
-      opt[String]("schema.repo.url").text("Avro schema repository URL.").optional().action {
+      opt[String]("schema.registry.url").text("Avro schema repository URL.").optional().action {
         (value, config) =>
           config.copy(schemaRepoUrl = value)
       }
@@ -105,8 +105,8 @@ object Main {
           println("--producer.config and --topic flags are required when using --kafka flag.")
           sys.exit(1)
         }
-        if (config.avro && (config.schemaPath.isEmpty || config.schemaRepoUrl.isEmpty || config.hashFields.isEmpty)) {
-          println("--schema.path, --schema.repo.url and --hash.fields flags are required when using --avro flag.")
+        if (config.avro && (config.schemaPath.isEmpty || config.schemaRepoUrl.isEmpty)) {
+          println("--schema.path and --schema.registry.url flags are required when using --avro flag.")
           sys.exit(1)
         }
         config
@@ -117,25 +117,7 @@ object Main {
 
 case class DatasetProducerConfig(filename: String = "", kafka: Option[String] = None, producerProperties: Option[File] = None,
                                  topic: Option[String] = None, syslog: Option[String] = None, loop: Boolean = false,
-                                 avro: Boolean = false, schemaPath: Option[File] = None, schemaRepoUrl: String = "", hashFields: String = "")
-
-class SchemaEntry(path: Path, parser: Schema.Parser) {
-  private val rawSchema = Files.readAllBytes(path)
-  val schema = parser.parse(new String(rawSchema))
-  val schemaVersion: Int = 0
-  var schemaId: Option[Int] = None
-
-  def kafkaEntry(data: Array[Byte]): Array[Byte] = {
-    if (schemaId.isEmpty) {
-      println("You should register schema first in order to have an ID")
-      sys.exit(1)
-    }
-
-    ByteBuffer.allocate(4).putInt(schemaVersion).array() ++
-    ByteBuffer.allocate(4).putInt(schemaId.get).array() ++
-    data
-  }
-}
+                                 avro: Boolean = false, schemaPath: Option[File] = None, schemaRepoUrl: String = "")
 
 case class DatasetProducer(config: DatasetProducerConfig) {
   var stopRequested = false
@@ -172,39 +154,53 @@ case class DatasetProducer(config: DatasetProducerConfig) {
   def sendAvroKafka() {
     //Producer initialization
     val props = new Properties()
-    props.load(new FileInputStream(this.config.producerProperties.get))
-    val producer = new Producer[String, Array[Byte]](new kafka.producer.ProducerConfig(props))
+    props.put(ProducerConfig.BOOTSTRAP_SERVERS_CONFIG, config.kafka.get)
+    props.put(ProducerConfig.KEY_SERIALIZER_CLASS_CONFIG,
+              classOf[io.confluent.kafka.serializers.KafkaAvroSerializer])
+    props.put(ProducerConfig.VALUE_SERIALIZER_CLASS_CONFIG,
+              classOf[io.confluent.kafka.serializers.KafkaAvroSerializer])
+    props.put("schema.registry.url", config.schemaRepoUrl)
+    val producer = new KafkaProducer[Any, Any](props)
 
-    //Initializing schemas and registering them in the schema registry
-    val schemaEntries = resolveAvroSchemas.iterator
-    val registryClient = new CachedSchemaRegistryClient(config.schemaRepoUrl, schemaEntries.size)
-    schemaEntries.foreach(schemaEntry => {
-      schemaEntry.schemaId = Some(registryClient.register(schemaEntry.schema.getName, schemaEntry.schema))
-    })
-    var currentSchemaEntry: Option[SchemaEntry] = None
-
+    val schemas = resolveAvroSchemas.iterator
+    var datumReader = new GenericDatumReader[GenericRecord](schemas.next())
+    var eof = false
     do {
-      Source.fromFile(this.config.filename, "UTF-8").getLines().foreach { line =>
-        if (this.stopRequested) {
-          producer.close()
-          return
-        }
-
+      eof = false
+      if (this.stopRequested) {
+        producer.close()
+        return
+      }
+      val in = Files.newInputStream(Paths.get(this.config.filename))
+      val decoder = DecoderFactory.get().directBinaryDecoder(in, null)
+      do {
+        var data: GenericRecord = null
         //If user provided more than one schema, then we'll pick appropriate one
-        if (currentSchemaEntry.isEmpty) {
-          currentSchemaEntry = Some(getAppropriateSchemaEntry(line, schemaEntries))
-        }
-
-        //Adding schema id to the original Avro message
-        val sendData = currentSchemaEntry.get.kafkaEntry(line.getBytes("UTF-8"))
-        Try(producer.send(new KeyedMessage(this.config.topic.get, sendData))) match {
-          case Failure(e) => {
-            println(e.getMessage)
-            sys.exit(1)
+        while (data == null && !eof) {
+          try {
+            data = datumReader.read(data, decoder)
+            val record = new ProducerRecord[Any, Any](config.topic.get, data)
+            producer.send(record).get()
+          } catch {
+            case e: EOFException => {
+              eof = true
+            }
+            case e: IOException => {
+              if (!schemas.hasNext) {
+                println("Failed to decode entries with provided schemas.")
+                sys.exit(1)
+              }
+              datumReader = new GenericDatumReader[GenericRecord](schemas.next())
+            }
+            case e: KafkaException => {
+              println("Failed to send message to Kafka.")
+              sys.exit(1)
+            }
           }
         }
-      }
-      Thread.sleep(1) // this helps avoid "Too many open files" exception on small files
+
+        Thread.sleep(1) // this helps avoid "Too many open files" exception on small files
+      } while (!eof)
     } while (this.config.loop)
   }
 
@@ -242,21 +238,6 @@ case class DatasetProducer(config: DatasetProducerConfig) {
 
   def stop() = this.stopRequested = true
 
-  def getAppropriateSchemaEntry(line: String, schemaEntries: Iterator[SchemaEntry]): SchemaEntry = {
-    val decoder = DecoderFactory.get().binaryDecoder(line.getBytes("UTF-8"), null)
-    var schemaEntry = schemaEntries.next()
-    var datumReader = new GenericDatumReader[GenericRecord](schemaEntry.schema)
-    while (Try(datumReader.read(null, decoder)).isFailure) {
-      if (!schemaEntries.hasNext) {
-        println("Failed to decode entries with provided schemas.")
-        sys.exit(1)
-      }
-      schemaEntry = schemaEntries.next()
-      datumReader = new GenericDatumReader[GenericRecord](schemaEntry.schema)
-    }
-    schemaEntry
-  }
-
   private def resolveAddress(address: String): (String, InetAddress, Int) = {
     val Array(protocol, address) = this.config.syslog.get.split("://")
     val Array(host, port) = address.split(":")
@@ -271,23 +252,23 @@ case class DatasetProducer(config: DatasetProducerConfig) {
     (protocol, ip, port.toInt)
   }
 
-  private def resolveAvroSchemas: List[SchemaEntry] = {
+  private def resolveAvroSchemas: List[Schema] = {
     if (!config.schemaPath.get.exists) {
       println("Schema path '%s' does not exist".format(config.schemaPath))
       sys.exit(1)
     }
     val parser = new Schema.Parser()
     if (config.schemaPath.get.isDirectory) {
-      val schemas = new mutable.MutableList[SchemaEntry]
+      val schemas = new mutable.MutableList[Schema]
       Files.walkFileTree(config.schemaPath.get.toPath, new SimpleFileVisitor[Path]() {
         override def visitFile(file: Path, attrs: BasicFileAttributes): FileVisitResult = {
-          schemas += new SchemaEntry(file, parser)
+          schemas += parser.parse(file.toFile)
           FileVisitResult.CONTINUE
         }
       })
       schemas.toList
     } else {
-      List(new SchemaEntry(config.schemaPath.get.toPath, parser))
+      List(parser.parse(config.schemaPath.get))
     }
   }
 

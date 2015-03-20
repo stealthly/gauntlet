@@ -52,7 +52,7 @@ project("dataset-producer") {
 
     dependencies {
         compile 'org.apache.kafka:kafka_2.10:0.8.2.0-cp'
-        compile 'io.confluent:kafka-schema-registry-client:1.0'
+        compile 'io.confluent:kafka-avro-serializer:1.0'
     }
 }
 

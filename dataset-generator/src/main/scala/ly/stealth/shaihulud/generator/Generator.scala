@@ -115,7 +115,7 @@ trait AvroGenerator {
       val encoder = EncoderFactory.get().directBinaryEncoder(out, null)
       new GenericDatumWriter[GenericRecord](schema).write(record, encoder)
 
-      out.toByteArray ++ "\n".getBytes("UTF-8")
+      out.toByteArray
     }
   }
 
