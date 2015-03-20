@@ -30,6 +30,10 @@ project("dataset-generator") {
 	    }
 	    manifest.attributes("Main-Class": "ly.stealth.shaihulud.generator.Main")
 	}
+
+    dependencies {
+        compile("org.apache.avro:avro:1.7.7")
+    }
 }
 
 project("dataset-producer") {
