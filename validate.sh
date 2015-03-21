@@ -4,6 +4,8 @@ export SPARK_PATH="/opt/spark"
 export MESOS_MASTER_URL="mesos://localhost:5050"
 export MESOS_EXECUTOR_URI="https://dist.apache.org/repos/dist/release/spark/spark-1.2.1/spark-1.2.1-bin-cdh4.tgz"
 export MESOS_COARSE_GRAINED="true"
+export MESOS_EXECUTOR_CORES="8"
+export MESOS_EXECUTOR_MEMORY="4G"
 
 export CASSANDRA_HOST="localhost"
 export CASSANDRA_USER="cassandra"
@@ -74,6 +76,14 @@ case $key in
     MESOS_MASTER_URL="$2"
     shift
     ;;
+    --mesos.executor.cores)
+    MESOS_EXECUTOR_CORES="$2"
+    shift
+    ;;
+    --mesos.executor.memory)
+    MESOS_EXECUTOR_MEMORY="$2"
+    shift
+    ;;
     *)
             # unknown option
     ;;
@@ -81,4 +91,4 @@ esac
 shift
 done
 
-eval "$SPARK_PATH/bin/spark-submit --conf spark.cassandra.connection.host=$CASSANDRA_HOST --conf spark.cassandra.auth.username=$CASSANDRA_USER --conf spark.cassandra.auth.password=$CASSANDRA_PASSWORD --executor-memory 4G --total-executor-cores 8 --class ly.stealth.shaihulud.reader.Main --master $MESOS_MASTER_URL spark-validator/build/libs/spark-validator-1.0.jar --source $KAFKA_SOURCE_TOPIC --destination $KAFKA_DESTINATION_TOPIC --partitions $KAFKA_NUM_TOPIC_PARTITIONS --zookeeper $ZK_CONNECT --broker.list $KAFKA_CONNECT --kafka.fetch.size $KAFKA_FETCH_SIZE --executor.uri $MESOS_EXECUTOR_URI --mesos.coarse $MESOS_COARSE_GRAINED 1> spark-validator.out 2> spark-validator.err"
+eval "$SPARK_PATH/bin/spark-submit --conf spark.cassandra.connection.host=$CASSANDRA_HOST --conf spark.cassandra.auth.username=$CASSANDRA_USER --conf spark.cassandra.auth.password=$CASSANDRA_PASSWORD --executor-memory $MESOS_EXECUTOR_MEMORY --total-executor-cores $MESOS_EXECUTOR_CORES --class ly.stealth.shaihulud.reader.Main --master $MESOS_MASTER_URL spark-validator/build/libs/spark-validator-1.0.jar --source $KAFKA_SOURCE_TOPIC --destination $KAFKA_DESTINATION_TOPIC --partitions $KAFKA_NUM_TOPIC_PARTITIONS --zookeeper $ZK_CONNECT --broker.list $KAFKA_CONNECT --kafka.fetch.size $KAFKA_FETCH_SIZE --executor.uri $MESOS_EXECUTOR_URI --mesos.coarse $MESOS_COARSE_GRAINED 1> spark-validator.out 2> spark-validator.err"
