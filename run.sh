@@ -11,7 +11,9 @@ export ZK_CONNECT="localhost:2181"
 export KAFKA_CONNECT="localhost:9092"
 export KAFKA_TOPIC="dataset"
 
-export CLIENT_LAUNCH_COMMAND="~/gopath/src/github.com/stealthly/go_kafka_client/mirrormaker/mirrormaker --prefix mirror_ --consumer.config ~/gopath/src/github.com/stealthly/go_kafka_client/mirrormaker/consumer.config --num.streams 2 --producer.config ~/gopath/src/github.com/stealthly/go_kafka_client/mirrormaker/producer.config --whitelist=\"^$KAFKA_TOPIC\""
+export AVRO="false"
+
+export CLIENT_LAUNCH_COMMAND="$GOPATH/src/github.com/stealthly/go_kafka_client/mirrormaker/mirrormaker --prefix mirror_ --consumer.config $GOPATH/src/github.com/stealthly/go_kafka_client/mirrormaker/consumer.config --num.streams 2 --producer.config $GOPATH/src/github.com/stealthly/go_kafka_client/mirrormaker/producer.config --whitelist=\"^$KAFKA_TOPIC\""
 
 while [[ $# > 1 ]]
 do
@@ -54,6 +56,12 @@ case $key in
     CLIENT_LAUNCH_COMMAND="$2"
     shift
     ;;
+    --avro)
+    AVRO="$2"
+    eval "docker build -t stealthly/confluent-platform ."
+    eval "docker run -d --net=host -p 8081:8081 stealthly/confluent-platform"
+    shift
+    ;;
     *)
             # unknown option
     ;;
@@ -62,6 +70,6 @@ shift
 done
 
 eval "java -jar dataset-generator/build/libs/dataset-generator-1.0.jar --filename $DATASET_FILE_NAME --filesize $DATASET_SIZE --min.length $DATASET_MIN_LENGTH --max.length $DATASET_MAX_LENGTH"
-eval "java -jar dataset-producer/build/libs/dataset-producer-1.0.jar --filename $DATASET_FILE_NAME --kafka $KAFKA_CONNECT --topic $KAFKA_TOPIC --producer.config $PRODUCER_CONFIG"
+eval "java -jar dataset-producer/build/libs/dataset-producer-1.0.jar --filename $DATASET_FILE_NAME --kafka $KAFKA_CONNECT --topic $KAFKA_TOPIC --producer.config $PRODUCER_CONFIG --avro $AVRO"
 
 eval $CLIENT_LAUNCH_COMMAND
