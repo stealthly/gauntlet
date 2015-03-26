@@ -2,6 +2,9 @@ package ly.stealth.shaihulud.generator
 
 import java.io._
 import java.nio.ByteBuffer
+import java.sql.Timestamp
+import java.util
+import java.util.concurrent.TimeUnit
 
 import org.apache.avro.Schema
 import org.apache.avro.generic.{GenericDatumWriter, GenericData, GenericRecord}
@@ -125,7 +128,9 @@ trait AvroGenerator {
 class MetricLineGenerator extends AvroGenerator {
   def populateRecord(config: GeneratorConfig, record: GenericRecord) {
     record.put("id", 0L)
-    record.put("timings", new java.util.ArrayList[Long]())
+    val timingsMap = new util.HashMap[String, Long]()
+    timingsMap.put("created", TimeUnit.MILLISECONDS.toNanos(System.currentTimeMillis()))
+    record.put("timings", timingsMap)
     record.put("value", ByteBuffer.wrap(Random.nextString((config.maxLength - config.minLength) + 1).getBytes("UTF-8")))
   }
 }
