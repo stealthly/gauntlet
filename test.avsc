@@ -12,13 +12,12 @@
         },
         {
             "name": "timings",
-            "doc": "Timings",
-            "default": "null",
+            "default": null,
             "type": [
                 "null",
                 {
-                    "type": "array",
-                    "items": "long"
+                    "type": "map",
+                    "values": "long"
                 }
             ]
         }
