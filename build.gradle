@@ -6,6 +6,9 @@ subprojects {
         maven {
         	url "https://oss.sonatype.org/content/repositories/public"
         }
+        maven {
+            url "http://packages.confluent.io/maven/"
+        }
     }
 
     dependencies {
@@ -27,6 +30,10 @@ project("dataset-generator") {
 	    }
 	    manifest.attributes("Main-Class": "ly.stealth.shaihulud.generator.Main")
 	}
+
+    dependencies {
+        compile("org.apache.avro:avro:1.7.7")
+    }
 }
 
 project("dataset-producer") {
@@ -44,7 +51,8 @@ project("dataset-producer") {
     }
 
     dependencies {
-        compile 'org.apache.kafka:kafka_2.10:0.8.2-beta'
+        compile 'org.apache.kafka:kafka_2.10:0.8.2.0-cp'
+        compile 'io.confluent:kafka-avro-serializer:1.0'
     }
 }
 

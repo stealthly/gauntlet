@@ -1,0 +1,25 @@
+{
+    "type": "record",
+    "name": "message",
+    "fields": [
+        {
+            "name": "id",
+            "type": "int"
+        },
+        {
+            "name": "value",
+            "type": "bytes"
+        },
+        {
+            "name": "timings",
+            "default": null,
+            "type": [
+                "null",
+                {
+                    "type": "map",
+                    "values": "long"
+                }
+            ]
+        }
+    ]
+}
