@@ -4,7 +4,7 @@ subprojects {
     repositories {
         mavenCentral()
         maven {
-        	url "https://oss.sonatype.org/content/repositories/public"
+            url "https://oss.sonatype.org/content/repositories/public"
         }
     }
 
@@ -15,18 +15,18 @@ subprojects {
 }
 
 project("dataset-generator") {
-	version = '1.0'
+    version = '1.0'
 
     jar {
-	    doFirst {
-	        from(configurations.compile.collect { it.isDirectory() ? it : zipTree(it) }) {
-	            exclude "META-INF/*.SF"
-	            exclude "META-INF/*.DSA"
-	            exclude "META-INF/*.RSA"
-	        }
-	    }
-	    manifest.attributes("Main-Class": "ly.stealth.shaihulud.generator.Main")
-	}
+        doFirst {
+            from(configurations.compile.collect { it.isDirectory() ? it : zipTree(it) }) {
+                exclude "META-INF/*.SF"
+                exclude "META-INF/*.DSA"
+                exclude "META-INF/*.RSA"
+            }
+        }
+        manifest.attributes("Main-Class": "ly.stealth.shaihulud.generator.Main")
+    }
 }
 
 project("dataset-producer") {
@@ -69,6 +69,39 @@ project("spark-validator") {
         }
         compile "com.datastax.cassandra:cassandra-driver-core:2.1.4"
         compile("com.datastax.spark:spark-cassandra-connector-java_2.10:1.2.0-alpha1")
+        compile("com.googlecode.json-simple:json-simple:1.1.1")
+        compile("com.101tec:zkclient:0.4")
+        compile("com.yammer.metrics:metrics-core:2.2.0")
+        compile files("libs/kafka-spark-consumer-0.0.1-SNAPSHOT.jar")
+    }
+}
+
+project("spark-validator-hbase") {
+    version = '1.0'
+
+    jar {
+        doFirst {
+            from(configurations.compile.collect { it.isDirectory() ? it : zipTree(it) }) {
+                exclude "META-INF/*.SF"
+                exclude "META-INF/*.DSA"
+                exclude "META-INF/*.RSA"
+            }
+        }
+        manifest.attributes("Main-Class": "ly.stealth.shaihulud.reader.Main")
+    }
+
+    dependencies {
+        compile("org.apache.spark:spark-core_2.10:1.2.1")
+        compile("org.apache.spark:spark-streaming_2.10:1.2.1") {
+            exclude module: "zookeeper"
+        }
+        compile("org.apache.kafka:kafka_2.10:0.8.1.1") {
+            exclude module: "zookeeper"
+        }
+        compile("org.apache.hbase:hbase-server:0.98.11-hadoop2")
+        compile("org.apache.hbase:hbase-client:0.98.11-hadoop2")
+        compile("org.apache.hbase:hbase-common:0.98.11-hadoop2")
+        compile("it.nerdammer.bigdata:spark-hbase-connector_2.10:0.9.4")
         compile("com.googlecode.json-simple:json-simple:1.1.1")
         compile("com.101tec:zkclient:0.4")
         compile("com.yammer.metrics:metrics-core:2.2.0")
