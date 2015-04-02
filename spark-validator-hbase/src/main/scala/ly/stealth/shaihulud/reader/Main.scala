@@ -65,7 +65,7 @@ object Main extends App with Logging {
         Some(Bytes.toBytes(data.destination_topic))
       )
 
-    override def columns = Seq("test_id", "source_topic", "destination_topic")
+    override def columns = Seq("source_topic", "destination_topic")
   }
 
   implicit def MessageFieldWriter: FieldWriter[Message] = new FieldWriter[Message] {
@@ -78,7 +78,7 @@ object Main extends App with Logging {
         Some(Bytes.toBytes(data.payload))
       )
 
-    override def columns = Seq("test_id", "topic", "partition", "offset", "payload")
+    override def columns = Seq("topic", "partition", "offset", "payload")
   }
 
   val poisonPill = UUID.randomUUID().toString.getBytes("UTF8")
