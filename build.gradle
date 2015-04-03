@@ -91,7 +91,6 @@ project("spark-validator-hbase") {
     }
 
     dependencies {
-        compile("org.apache.spark:spark-core_2.10:1.2.1")
         compile("org.apache.spark:spark-streaming_2.10:1.2.1") {
             exclude module: "zookeeper"
         }
