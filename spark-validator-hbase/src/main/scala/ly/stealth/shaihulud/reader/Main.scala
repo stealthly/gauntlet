@@ -53,7 +53,6 @@ object Main extends App with Logging {
   val sparkConfig = new SparkConf().setAppName("kafka_client_validator")
     .set("spark.serializer", "org.apache.spark.serializer.KryoSerializer")
     .set("spark.hbase.host", config.zookeeper)
-    .setMaster("local[8]")
   val ssc = new StreamingContext(sparkConfig, Seconds(10))
   ssc.checkpoint("spark-validator-hbase")
 
