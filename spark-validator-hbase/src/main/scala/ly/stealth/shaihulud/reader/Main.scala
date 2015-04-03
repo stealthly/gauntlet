@@ -71,6 +71,7 @@ object Main extends App with Logging {
   implicit def MessageFieldWriter: FieldWriter[Message] = new FieldWriter[Message] {
     override def map(data: Message): HBaseData =
       Seq(
+        Some(Bytes.toBytes(data.id)),
         Some(Bytes.toBytes(data.test_id)),
         Some(Bytes.toBytes(data.topic)),
         Some(Bytes.toBytes(data.partition)),
@@ -78,7 +79,7 @@ object Main extends App with Logging {
         Some(Bytes.toBytes(data.payload))
       )
 
-    override def columns = Seq("topic", "partition", "offset", "payload")
+    override def columns = Seq("test_id", "topic", "partition", "offset", "payload")
   }
 
   val poisonPill = UUID.randomUUID().toString.getBytes("UTF8")
@@ -117,10 +118,8 @@ object Main extends App with Logging {
   def startStreamForTopic(testId: String, topic: String, config: ReaderConfiguration, poisonPill: Array[Byte], validator: Validator) {
     val stream = createKafkaStream(config.zookeeper, topic, config.partitions).repartition(config.partitions).persist(StorageLevel.MEMORY_AND_DISK_SER)
     stream.map(message => {
-      println(message)
       Message(testId, message.getTopic, message.getPartition.partition, message.getOffset, new String(message.getPayload))
     }).foreachRDD(rdd => {
-      println(rdd)
       val filtered = rdd.filter(message => !java.util.Arrays.equals(message.payload.getBytes("UTF8"), poisonPill))
       filtered.toHBaseTable("messages")
         .inColumnFamily("kafka_client_validation")
@@ -158,7 +157,9 @@ case class Test(test_id: String = "", source_topic: String = "", destination_top
 
 case class Counter(test_id: String = "", topic: String = "", total: Long = 0L)
 
-case class Message(test_id: String = "", topic: String = "", partition: Int = 0, offset: Long = 0, payload: String = "")
+case class Message(test_id: String = "", topic: String = "", partition: Int = 0, offset: Long = 0, payload: String = "") {
+  val id = test_id + topic + partition + offset
+}
 
 case class ReaderConfiguration(testId: String = UUID.randomUUID().toString, sourceTopic: String = "", destinationTopic: String = "",
                                partitions: Int = 1, zookeeper: String = "", brokerList: String = "", kafkaFetchSize: Int = 8)
