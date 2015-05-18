@@ -43,7 +43,7 @@ object Main extends App {
   val cassandraConnector = CassandraConnector(sparkConfig)
   cassandraConnector.withSessionDo(session => {
     session.execute("CREATE KEYSPACE IF NOT EXISTS spark_analysis WITH REPLICATION = {'class': 'SimpleStrategy', 'replication_factor': 1}")
-    session.execute("CREATE TABLE IF NOT EXISTS spark_analysis.events(topic text, partition text, consumerId text, eventName text, second int, operation text, value int, count counter, PRIMARY KEY(topic, partition, consumerId, eventName, second))")
+    session.execute("CREATE TABLE IF NOT EXISTS spark_analysis.events(topic text, partition text, consumerid text, eventname text, second int, operation text, value int, cnt int, PRIMARY KEY(topic, second, partition, consumerid, eventname, operation))")
   })
 
   val consumerConfig = Map("metadata.broker.list" -> appConfig.brokerList,
@@ -81,15 +81,15 @@ object Main extends App {
       }).toList
     }).reduce((acc, value) => {
       acc ++ value
-    }).map(entry => {
+    }).flatMap(entry => {
       val second = System.currentTimeMillis()/1000
       entry.groupBy(entry => (entry._1, entry._2, entry._3, entry._4)).map { case (key, values) => {
         val timings = values.map(_._5)
-        Event(key._1, key._2, key._3, key._4, second, "avg%d%s".format(durationValue, durationUnit), timings.sum / timings.size, timings.size)
+        (key._1, key._2, key._3, key._4, second, "avg%d%s".format(durationValue, durationUnit), timings.sum / timings.size, timings.size)
       }
       }
     }).foreachRDD(rdd => {
-      rdd.saveToCassandra("spark_analysis", "events")
+      rdd.saveToCassandra("spark_analysis", "events", SomeColumns("topic", "partition", "consumerid", "eventname", "second", "operation", "value", "cnt"))
     })
   }
   
@@ -98,7 +98,5 @@ object Main extends App {
     case "minute" => Minutes(durationValue)
   }
 }
-
-case class Event(topic: String, partition: String, consumerId: String, eventName: String, second: Long, operation: String, value: Long, count: Long)
 
 case class AppConfig(topic: String = "", brokerList: String = "", schemaRegistryUrl: String = "")
