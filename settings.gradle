@@ -1,2 +1,2 @@
-include 'dataset-generator', 'dataset-producer', 'spark-validator', 'spark-validator-hbase'
+include 'dataset-generator', 'dataset-producer', 'spark-validator', 'spark-validator-hbase', 'latencies-calc'
 
