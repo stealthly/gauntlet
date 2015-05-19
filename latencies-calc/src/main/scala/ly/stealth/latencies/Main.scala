@@ -68,7 +68,6 @@ object Main extends App {
   def calculateAverages(stream: DStream[(Array[Byte], SchemaAndData)], durationUnit: String, durationValue: Long) = {
     stream.window(windowDuration(durationUnit, durationValue)).map(value => {
       val record = value._2.deserialize().asInstanceOf[GenericRecord]
-      println(record.get("tag"))
       import scala.collection.JavaConversions._
       val tags = record.get("tag").asInstanceOf[java.util.Map[Utf8, Utf8]]
       val timings = record.get("timings").asInstanceOf[GenericData.Array[Record]]
@@ -92,7 +91,7 @@ object Main extends App {
       rdd.saveToCassandra("spark_analysis", "events", SomeColumns("topic", "partition", "consumerid", "eventname", "second", "operation", "value", "cnt"))
     })
   }
-  
+
   def windowDuration(unit: String, durationValue: Long): Duration = unit match {
     case "second" => Seconds(durationValue)
     case "minute" => Minutes(durationValue)
