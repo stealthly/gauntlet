@@ -3,12 +3,12 @@ package ly.stealth.latencies
 import _root_.kafka.serializer.DefaultDecoder
 import com.datastax.spark.connector._
 import com.datastax.spark.connector.cql.CassandraConnector
-import io.confluent.kafka.serializers.KafkaAvroDecoder
 import org.apache.avro.generic.GenericData.Record
 import org.apache.avro.generic.{GenericData, GenericRecord}
+import org.apache.avro.util.Utf8
 import org.apache.spark.SparkConf
 import org.apache.spark.streaming._
-import org.apache.spark.streaming.dstream.InputDStream
+import org.apache.spark.streaming.dstream.DStream
 import org.apache.spark.streaming.kafka._
 
 object Main extends App {
@@ -56,8 +56,7 @@ object Main extends App {
   ssc.awaitTermination()
 
   def start(ssc: StreamingContext, consumerConfig: Map[String, String], topic: String) = {
-    val stream = KafkaUtils.createDirectStream[Array[Byte], AnyRef, DefaultDecoder, KafkaAvroDecoder](ssc, consumerConfig, Set(topic))
-    stream.persist()
+    val stream = KafkaUtils.createDirectStream[Array[Byte], SchemaAndData, DefaultDecoder, AvroDecoder](ssc, consumerConfig, Set(topic)).persist()
     calculateAverages(stream, "second", 10)
     calculateAverages(stream, "second", 30)
     calculateAverages(stream, "minute", 1)
@@ -66,17 +65,18 @@ object Main extends App {
     calculateAverages(stream, "minute", 15)
   }
 
-  def calculateAverages(stream: InputDStream[(Array[Byte], AnyRef)], durationUnit: String, durationValue: Long) = {
+  def calculateAverages(stream: DStream[(Array[Byte], SchemaAndData)], durationUnit: String, durationValue: Long) = {
     stream.window(windowDuration(durationUnit, durationValue)).map(value => {
-      val record = value.asInstanceOf[GenericRecord]
+      val record = value._2.deserialize().asInstanceOf[GenericRecord]
+      println(record.get("tag"))
       import scala.collection.JavaConversions._
-      val tags = record.get("tag").asInstanceOf[java.util.Map[java.lang.String, java.lang.String]]
+      val tags = record.get("tag").asInstanceOf[java.util.Map[Utf8, Utf8]]
       val timings = record.get("timings").asInstanceOf[GenericData.Array[Record]]
       timings.combinations(2).map(entry => {
-        (tags.get("topic"),
-          tags.get("partition"),
-          tags.get("consumerId"),
-          entry.head.get("key").asInstanceOf[String] + "-" + entry.last.get("key").asInstanceOf[String],
+        (tags.get(new Utf8("topic")).toString,
+          tags.get(new Utf8("partition")).toString,
+          tags.get(new Utf8("consumerId")).toString,
+          entry.head.get("key").asInstanceOf[Utf8].toString + "-" + entry.last.get("key").asInstanceOf[Utf8].toString,
           entry.last.get("value").asInstanceOf[Long] - entry.head.get("value").asInstanceOf[Long])
       }).toList
     }).reduce((acc, value) => {
