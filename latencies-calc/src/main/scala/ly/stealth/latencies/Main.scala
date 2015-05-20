@@ -6,6 +6,7 @@ import _root_.kafka.serializer.DefaultDecoder
 import com.datastax.spark.connector._
 import com.datastax.spark.connector.cql.CassandraConnector
 import io.confluent.kafka.serializers.KafkaAvroSerializer
+import org.apache.avro.Schema
 import org.apache.avro.generic.GenericData.Record
 import org.apache.avro.generic.{GenericData, GenericRecord}
 import org.apache.avro.util.Utf8
@@ -99,12 +100,23 @@ object Main extends App {
       }
     }).persist()
 
+    val schema = "{\"type\":\"record\",\"name\":\"event\",\"fields\":[{\"name\":\"topic\",\"type\":\"string\"},{\"name\":\"partition\",\"type\":\"string\"},{\"name\":\"consumerid\",\"type\":\"string\"},{\"name\":\"eventname\",\"type\":\"string\"},{\"name\":\"second\",\"type\":\"long\"},{\"name\":\"operation\",\"type\":\"string\"},{\"name\":\"value\",\"type\":\"long\"},{\"name\":\"cnt\",\"type\":\"long\"}]}"
+    val eventSchema = new Schema.Parser().parse(schema)
     latencyStream.foreachRDD(rdd => {
       rdd.foreachPartition(latencies => {
-        val producer = new KafkaProducer[Any, Event](producerConfig)
+        val producer = new KafkaProducer[Any, AnyRef](producerConfig)
         try {
           for (latency <- latencies) {
-              val record = new ProducerRecord[Any, Event]("%s-latencies".format(topic), latency)
+              val latencyRecord = new GenericData.Record(eventSchema)
+              latencyRecord.put("topic", latency.topic)
+              latencyRecord.put("partition", latency.partition)
+              latencyRecord.put("consumerid", latency.consumerid)
+              latencyRecord.put("eventname", latency.eventname)
+              latencyRecord.put("second", latency.second)
+              latencyRecord.put("operation", latency.operation)
+              latencyRecord.put("value", latency.value)
+              latencyRecord.put("cnt", latency.cnt)
+              val record = new ProducerRecord[Any, AnyRef]("%s-latencies".format(topic), latencyRecord)
               producer.send(record)
           }
         } finally {
