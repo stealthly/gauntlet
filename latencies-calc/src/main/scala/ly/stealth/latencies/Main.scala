@@ -1,11 +1,17 @@
 package ly.stealth.latencies
 
+import java.util.Properties
+
 import _root_.kafka.serializer.DefaultDecoder
+import com.cloudera.avro.registry.serializers.KafkaAvroSerializer
 import com.datastax.spark.connector._
 import com.datastax.spark.connector.cql.CassandraConnector
+import io.confluent.kafka.serializers.KafkaAvroSerializer
 import org.apache.avro.generic.GenericData.Record
 import org.apache.avro.generic.{GenericData, GenericRecord}
 import org.apache.avro.util.Utf8
+import org.apache.kafka.clients.producer.{ProducerRecord, KafkaProducer}
+import org.apache.kafka.clients.producer.ProducerConfig._
 import org.apache.spark.SparkConf
 import org.apache.spark.streaming._
 import org.apache.spark.streaming.dstream.DStream
@@ -49,24 +55,29 @@ object Main extends App {
   val consumerConfig = Map("metadata.broker.list" -> appConfig.brokerList,
     "auto.offset.reset" -> "smallest",
     "schema.registry.url" -> appConfig.schemaRegistryUrl)
+  val producerConfig = new Properties()
+  producerConfig.put(BOOTSTRAP_SERVERS_CONFIG, appConfig.brokerList)
+  producerConfig.put(KEY_SERIALIZER_CLASS_CONFIG, classOf[KafkaAvroSerializer])
+  producerConfig.put(VALUE_SERIALIZER_CLASS_CONFIG, classOf[KafkaAvroSerializer])
+  producerConfig.put("schema.registry.url", appConfig.schemaRegistryUrl)
 
-  start(ssc, consumerConfig, appConfig.topic)
+  start(ssc, consumerConfig, prodcuerConfig, appConfig.topic)
 
   ssc.start()
   ssc.awaitTermination()
 
-  def start(ssc: StreamingContext, consumerConfig: Map[String, String], topic: String) = {
+  def start(ssc: StreamingContext, consumerConfig: Map[String, String], producerConfig: Properties, topic: String) = {
     val stream = KafkaUtils.createDirectStream[Array[Byte], SchemaAndData, DefaultDecoder, AvroDecoder](ssc, consumerConfig, Set(topic)).persist()
-    calculateAverages(stream, "second", 10)
-    calculateAverages(stream, "second", 30)
-    calculateAverages(stream, "minute", 1)
-    calculateAverages(stream, "minute", 5)
-    calculateAverages(stream, "minute", 10)
-    calculateAverages(stream, "minute", 15)
+    calculateAverages(stream, "second", 10, topic, producerConfig)
+    calculateAverages(stream, "second", 30, topic, producerConfig)
+    calculateAverages(stream, "minute", 1, topic, producerConfig)
+    calculateAverages(stream, "minute", 5, topic, producerConfig)
+    calculateAverages(stream, "minute", 10, topic, producerConfig)
+    calculateAverages(stream, "minute", 15, topic, producerConfig)
   }
 
-  def calculateAverages(stream: DStream[(Array[Byte], SchemaAndData)], durationUnit: String, durationValue: Long) = {
-    stream.window(windowDuration(durationUnit, durationValue)).map(value => {
+  def calculateAverages(stream: DStream[(Array[Byte], SchemaAndData)], durationUnit: String, durationValue: Long, topic: String, producerConfig: Properties) = {
+    val latencyStream = stream.window(windowDuration(durationUnit, durationValue)).map(value => {
       val record = value._2.deserialize().asInstanceOf[GenericRecord]
       import scala.collection.JavaConversions._
       val tags = record.get("tag").asInstanceOf[java.util.Map[Utf8, Utf8]]
@@ -84,11 +95,27 @@ object Main extends App {
       val second = System.currentTimeMillis()/1000
       entry.groupBy(entry => (entry._1, entry._2, entry._3, entry._4)).map { case (key, values) => {
         val timings = values.map(_._5)
-        (key._1, key._2, key._3, key._4, second, "avg%d%s".format(durationValue, durationUnit), timings.sum / timings.size, timings.size)
+        Event(key._1, key._2, key._3, key._4, second, "avg%d%s".format(durationValue, durationUnit), timings.sum / timings.size, timings.size)
       }
       }
-    }).foreachRDD(rdd => {
-      rdd.saveToCassandra("spark_analysis", "events", SomeColumns("topic", "partition", "consumerid", "eventname", "second", "operation", "value", "cnt"))
+    }).persist()
+
+    latencyStream.foreachRDD(rdd => {
+      rdd.foreachPartition(latencies => {
+        val producer = new KafkaProducer[Any, Event](producerConfig)
+        try {
+          for (latency <- latencies) {
+              val record = new ProducerRecord[Any, Event]("%s-latencies".format(topic), latency)
+              producer.send(record)
+          }
+        } finally {
+          producer.close()
+        }
+      })
+    })
+
+    latencyStream.foreachRDD(rdd => {
+      rdd.saveToCassandra("spark_analysis", "events")
     })
   }
 
@@ -98,4 +125,5 @@ object Main extends App {
   }
 }
 
+case class Event(topic: String, partition: String, consumerid: String, eventname: String, second: Long, operation: String, value: Long, cnt: Long)
 case class AppConfig(topic: String = "", brokerList: String = "", schemaRegistryUrl: String = "")
