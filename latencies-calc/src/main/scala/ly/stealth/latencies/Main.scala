@@ -101,10 +101,10 @@ object Main extends App {
     }).persist()
 
     val schema = "{\"type\":\"record\",\"name\":\"event\",\"fields\":[{\"name\":\"topic\",\"type\":\"string\"},{\"name\":\"partition\",\"type\":\"string\"},{\"name\":\"consumerid\",\"type\":\"string\"},{\"name\":\"eventname\",\"type\":\"string\"},{\"name\":\"second\",\"type\":\"long\"},{\"name\":\"operation\",\"type\":\"string\"},{\"name\":\"value\",\"type\":\"long\"},{\"name\":\"cnt\",\"type\":\"long\"}]}"
-    val eventSchema = new Schema.Parser().parse(schema)
     latencyStream.foreachRDD(rdd => {
       rdd.foreachPartition(latencies => {
         val producer = new KafkaProducer[Any, AnyRef](producerConfig)
+        val eventSchema = new Schema.Parser().parse(schema)
         try {
           for (latency <- latencies) {
               val latencyRecord = new GenericData.Record(eventSchema)
