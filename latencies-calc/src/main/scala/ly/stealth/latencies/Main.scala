@@ -3,7 +3,6 @@ package ly.stealth.latencies
 import java.util.Properties
 
 import _root_.kafka.serializer.DefaultDecoder
-import com.cloudera.avro.registry.serializers.KafkaAvroSerializer
 import com.datastax.spark.connector._
 import com.datastax.spark.connector.cql.CassandraConnector
 import io.confluent.kafka.serializers.KafkaAvroSerializer
@@ -61,7 +60,7 @@ object Main extends App {
   producerConfig.put(VALUE_SERIALIZER_CLASS_CONFIG, classOf[KafkaAvroSerializer])
   producerConfig.put("schema.registry.url", appConfig.schemaRegistryUrl)
 
-  start(ssc, consumerConfig, prodcuerConfig, appConfig.topic)
+  start(ssc, consumerConfig, producerConfig, appConfig.topic)
 
   ssc.start()
   ssc.awaitTermination()
