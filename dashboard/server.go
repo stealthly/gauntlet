@@ -2,12 +2,11 @@ package main
 
 import (
 	"encoding/json"
-	"fmt"
 	"log"
 	"net/http"
-	"os"
-
+	"fmt"
 	"github.com/gorilla/websocket"
+	"os"
 )
 
 func (this *App) setHandlers() {

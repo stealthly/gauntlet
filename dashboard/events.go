@@ -66,13 +66,14 @@ func (this *EventFetcher) createConsumer() *kafka.Consumer {
 	consumerConfig.Strategy = func(_ *kafka.Worker, msg *kafka.Message, taskId kafka.TaskId) kafka.WorkerResult {
 		if record, ok := msg.DecodedValue.(*avro.GenericRecord); ok {
 			this.events <- &Event{
-				Topic:     record.Get("topic").(string),
-				Partition: record.Get("partition").(string),
-				EventName: record.Get("eventname").(string),
-				Second:    record.Get("second").(int64),
-				Operation: record.Get("operation").(string),
-				Value:     record.Get("value").(int64),
-				Cnt:       record.Get("cnt").(int64),
+				Topic:      record.Get("topic").(string),
+				ConsumerId: record.Get("consumerid").(string),
+				Partition:  record.Get("partition").(string),
+				EventName:  record.Get("eventname").(string),
+				Second:     record.Get("second").(int64),
+				Operation:  record.Get("operation").(string),
+				Value:      record.Get("value").(int64),
+				Cnt:        record.Get("cnt").(int64),
 			}
 		} else {
 			return kafka.NewProcessingFailedResult(taskId)
