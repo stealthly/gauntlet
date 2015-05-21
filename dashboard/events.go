@@ -62,7 +62,9 @@ func (this *EventFetcher) FetchEvents() {
 }
 
 func (this *EventFetcher) EventHistory() []Event {
-	data := this.connection.Query("SELECT * FROM events;").Iter()
+	var topic string
+	time := (time.Now() - 1*time.Hour).Unix()
+	data := this.connection.Query("SELECT * FROM events WHERE topic = ? AND second > ?;", topic, time).Iter()
 	var events []Event
 	var topic string
 	var partition string

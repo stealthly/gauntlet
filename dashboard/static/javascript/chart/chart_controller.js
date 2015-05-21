@@ -31,7 +31,6 @@
             if ($scope.charts[chartId].svg) {
               $scope.charts[chartId].svg.selectAll('*').remove();
             }
-            console.log('drawing chart ' + chartId);
 
             $scope.drawChart(chartId);
           }
@@ -44,7 +43,6 @@
     };
 
     $scope.addEvent = function(event) {
-      console.log('add event');
       console.log(event);
       for (var i=0; i<$scope.fields.length; i++){
         var chartId = event.consumerId + $scope.fields[i];
