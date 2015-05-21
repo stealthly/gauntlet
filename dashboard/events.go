@@ -45,21 +45,18 @@ func (this *EventFetcher) Close() {
 }
 
 func (this *EventFetcher) FetchEvents() {
-	var operations = [...]string{"avg10sec", "avg30sec", "avg1min", "avg5min", "avg10min", "avg15min"}
-
-	for i := 0; i < 4; i++ {
-		for _, operation := range operations {
-			consumerId := strconv.Itoa(i + 1)
-			eventName := "generated-consumed"
-			event := &Event{
-				Operation:  operation,
-				EventName:  eventName,
-				ConsumerId: consumerId,
-				Value:      uint64(rand.Intn(9999)),
-				Second:     this.lastSeen + 1,
-			}
-			this.events <- event
+	for i := 0; i < 120; i++ {
+		eventName := "generated-consumed"
+		event := &Event{
+			Partition:  strconv.Itoa(i),
+			Operation:  "avg10sec",
+			EventName:  eventName,
+			ConsumerId: "1",
+			Value:      uint64(rand.Intn(9999)),
+			Second:     this.lastSeen + 1,
+			Count:      uint64(rand.Intn(1000)),
 		}
+		this.events <- event
 	}
 	this.lastSeen += 1
 }

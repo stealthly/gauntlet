@@ -1,7 +1,7 @@
 <div id="charts">
-  <div ng-repeat="(consumerId, chart) in charts" class="col-md-4">
-    <h2>Consumer {{consumerId}}</h2>
-    <svg id="chart_{{consumerId}}"></svg>
+  <div ng-repeat="(chartId, chart) in charts" class="col-md-12">
+    <h3>Consumer {{chart.consumerId}} - {{chart.field}}</h2>
+    <svg id="chart_{{chart.field}}_{{chart.consumerId}}"></svg>
   </div>
 </div>
 
