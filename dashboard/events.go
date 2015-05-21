@@ -1,12 +1,12 @@
 package main
 
 import (
+	"fmt"
 	"log"
 	"time"
+
 	"github.com/gocql/gocql"
 	kafka "github.com/stealthly/go_kafka_client"
-	"github.com/stealthly/go-avro"
-	"fmt"
 )
 
 type Event struct {
@@ -14,17 +14,17 @@ type Event struct {
 	Partition  string `json:"partition"`
 	ConsumerId string `json:"consumerId"`
 	EventName  string `json:"eventName"`
-	Second     int64 `json:"second"`
+	Second     int64  `json:"second"`
 	Operation  string `json:"operation"`
-	Value      int64 `json:"value"`
-	Cnt      int64 `json:"count"`
+	Value      int64  `json:"value"`
+	Cnt        int64  `json:"count"`
 }
 
 type EventFetcher struct {
 	events     chan *Event
 	connection *gocql.Session
-	config *EventFetcherConfig
-	consumer *kafka.Consumer
+	config     *EventFetcherConfig
+	consumer   *kafka.Consumer
 }
 
 func NewEventFetcher(config *EventFetcherConfig) *EventFetcher {
@@ -56,27 +56,26 @@ func (this *EventFetcher) createConsumer() *kafka.Consumer {
 	consumerConfig.Coordinator = coordinator
 	consumerConfig.Groupid = "event-dashboard"
 	consumerConfig.ValueDecoder = kafka.NewKafkaAvroDecoder(this.config.SchemaRegistryUrl)
-	consumerConfig.WorkerFailureCallback =  func(_ *kafka.WorkerManager) kafka.FailedDecision {
+	consumerConfig.WorkerFailureCallback = func(_ *kafka.WorkerManager) kafka.FailedDecision {
 		return kafka.CommitOffsetAndContinue
 	}
-	consumerConfig.WorkerFailedAttemptCallback =  func(_ *kafka.Task, _ kafka.WorkerResult) kafka.FailedDecision {
+	consumerConfig.WorkerFailedAttemptCallback = func(_ *kafka.Task, _ kafka.WorkerResult) kafka.FailedDecision {
 		return kafka.CommitOffsetAndContinue
 	}
 	consumerConfig.Strategy = func(_ *kafka.Worker, msg *kafka.Message, taskId kafka.TaskId) kafka.WorkerResult {
 		if record, ok := msg.DecodedValue.(*avro.GenericRecord); ok {
 			this.events <- &Event{
-				Topic: record.Get("topic").(string),
+				Topic:     record.Get("topic").(string),
 				Partition: record.Get("partition").(string),
 				EventName: record.Get("eventname").(string),
-				Second: record.Get("second").(int64),
+				Second:    record.Get("second").(int64),
 				Operation: record.Get("operation").(string),
-				Value: record.Get("value").(int64),
-				Cnt: record.Get("cnt").(int64),
+				Value:     record.Get("value").(int64),
+				Cnt:       record.Get("cnt").(int64),
 			}
 		} else {
 			return kafka.NewProcessingFailedResult(taskId)
 		}
-
 
 		return kafka.NewSuccessfulResult(taskId)
 	}
@@ -85,7 +84,7 @@ func (this *EventFetcher) createConsumer() *kafka.Consumer {
 }
 
 func (this *EventFetcher) EventHistory() []Event {
-	time := time.Now().Add(-1*time.Hour).Unix()
+	time := time.Now().Add(-1 * time.Hour).Unix()
 	kafka.Infof("eventFetcher", "SELECT * FROM events WHERE topic = '%s' AND second > %d;", this.config.Topic, time)
 	data := this.connection.Query(`SELECT * FROM events WHERE topic = ? AND second > ?;`, this.config.Topic, time).Iter()
 	var events []Event
@@ -105,7 +104,7 @@ func (this *EventFetcher) EventHistory() []Event {
 			ConsumerId: consumerId,
 			EventName:  eventName,
 			Operation:  operation,
-			Cnt: cnt,
+			Cnt:        cnt,
 			Value:      value,
 		}
 		events = append(events, event)
@@ -123,8 +122,8 @@ func (this *EventFetcher) startFetch() {
 }
 
 type EventFetcherConfig struct {
-	CassandraHost string
-	Topic string
-	ZkConnect string
+	CassandraHost     string
+	Topic             string
+	ZkConnect         string
 	SchemaRegistryUrl string
 }
