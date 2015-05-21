@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/gocql/gocql"
+	avro "github.com/stealthly/go-avro"
 	kafka "github.com/stealthly/go_kafka_client"
 )
 

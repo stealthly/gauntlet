@@ -2,11 +2,12 @@ package main
 
 import (
 	"encoding/json"
+	"fmt"
 	"log"
 	"net/http"
-	"fmt"
-	"github.com/gorilla/websocket"
 	"os"
+
+	"github.com/gorilla/websocket"
 )
 
 func (this *App) setHandlers() {
@@ -63,7 +64,9 @@ func (this *App) eventSender() {
 			<-this.eventFetcher.events
 		} else {
 			message := <-this.eventFetcher.events
-			this.sendToAll(message)
+			if message.Operation == "avg10sec" {
+				this.sendToAll(message)
+			}
 		}
 	}
 }
