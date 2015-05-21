@@ -109,7 +109,9 @@ func (this *EventFetcher) EventHistory() []Event {
 			Cnt:        cnt,
 			Value:      value,
 		}
-		events = append(events, event)
+		if operation == "avg10sec" {
+			events = append(events, event)
+		}
 	}
 	if err := data.Close(); err != nil {
 		log.Fatal(err)
