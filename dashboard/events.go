@@ -2,11 +2,11 @@ package main
 
 import (
 	"log"
-	"math/rand"
-	"strconv"
 	"time"
-
 	"github.com/gocql/gocql"
+	kafka "github.com/stealthly/go_kafka_client"
+	"github.com/stealthly/go-avro"
+	"fmt"
 )
 
 type Event struct {
@@ -14,29 +14,32 @@ type Event struct {
 	Partition  string `json:"partition"`
 	ConsumerId string `json:"consumerId"`
 	EventName  string `json:"eventName"`
-	Second     uint64 `json:"second"`
+	Second     int64 `json:"second"`
 	Operation  string `json:"operation"`
-	Value      uint64 `json:"value"`
-	Count      uint64 `json:"count"`
+	Value      int64 `json:"value"`
+	Cnt      int64 `json:"count"`
 }
 
 type EventFetcher struct {
 	events     chan *Event
 	connection *gocql.Session
-	lastSeen   uint64
+	config *EventFetcherConfig
+	consumer *kafka.Consumer
 }
 
-func NewEventFetcher() *EventFetcher {
+func NewEventFetcher(config *EventFetcherConfig) *EventFetcher {
 	var err error
 	fetcher := new(EventFetcher)
+	fetcher.config = config
 	fetcher.events = make(chan *Event)
-	cluster := gocql.NewCluster("127.0.0.1")
+	cluster := gocql.NewCluster(config.CassandraHost)
 	cluster.Keyspace = "spark_analysis"
 	fetcher.connection, err = cluster.CreateSession()
 	if err != nil {
 		log.Fatal(err)
 	}
-	fetcher.lastSeen = 0
+	fetcher.consumer = fetcher.createConsumer()
+
 	return fetcher
 }
 
@@ -44,36 +47,57 @@ func (this *EventFetcher) Close() {
 	this.connection.Close()
 }
 
-func (this *EventFetcher) FetchEvents() {
-	for i := 0; i < 120; i++ {
-		eventName := "generated-consumed"
-		event := &Event{
-			Partition:  strconv.Itoa(i),
-			Operation:  "avg10sec",
-			EventName:  eventName,
-			ConsumerId: "1",
-			Value:      uint64(rand.Intn(9999)),
-			Second:     this.lastSeen + 1,
-			Count:      uint64(rand.Intn(1000)),
-		}
-		this.events <- event
+func (this *EventFetcher) createConsumer() *kafka.Consumer {
+	coordinatorConfig := kafka.NewZookeeperConfig()
+	coordinatorConfig.ZookeeperConnect = []string{this.config.ZkConnect}
+	coordinator := kafka.NewZookeeperCoordinator(coordinatorConfig)
+	consumerConfig := kafka.DefaultConsumerConfig()
+	consumerConfig.AutoOffsetReset = kafka.SmallestOffset
+	consumerConfig.Coordinator = coordinator
+	consumerConfig.Groupid = "event-dashboard"
+	consumerConfig.ValueDecoder = kafka.NewKafkaAvroDecoder(this.config.SchemaRegistryUrl)
+	consumerConfig.WorkerFailureCallback =  func(_ *kafka.WorkerManager) kafka.FailedDecision {
+		return kafka.CommitOffsetAndContinue
 	}
-	this.lastSeen += 1
+	consumerConfig.WorkerFailedAttemptCallback =  func(_ *kafka.Task, _ kafka.WorkerResult) kafka.FailedDecision {
+		return kafka.CommitOffsetAndContinue
+	}
+	consumerConfig.Strategy = func(_ *kafka.Worker, msg *kafka.Message, taskId kafka.TaskId) kafka.WorkerResult {
+		if record, ok := msg.DecodedValue.(*avro.GenericRecord); ok {
+			this.events <- &Event{
+				Topic: record.Get("topic").(string),
+				Partition: record.Get("partition").(string),
+				EventName: record.Get("eventname").(string),
+				Second: record.Get("second").(int64),
+				Operation: record.Get("operation").(string),
+				Value: record.Get("value").(int64),
+				Cnt: record.Get("cnt").(int64),
+			}
+		} else {
+			return kafka.NewProcessingFailedResult(taskId)
+		}
+
+
+		return kafka.NewSuccessfulResult(taskId)
+	}
+
+	return kafka.NewConsumer(consumerConfig)
 }
 
 func (this *EventFetcher) EventHistory() []Event {
-	var topic string
-	time := (time.Now() - 1*time.Hour).Unix()
-	data := this.connection.Query("SELECT * FROM events WHERE topic = ? AND second > ?;", topic, time).Iter()
+	time := time.Now().Add(-1*time.Hour).Unix()
+	kafka.Infof("eventFetcher", "SELECT * FROM events WHERE topic = '%s' AND second > %d;", this.config.Topic, time)
+	data := this.connection.Query(`SELECT * FROM events WHERE topic = ? AND second > ?;`, this.config.Topic, time).Iter()
 	var events []Event
 	var topic string
 	var partition string
 	var consumerId string
 	var eventName string
-	var second uint64
+	var second int64
 	var operation string
-	var value uint64
-	for data.Scan(&topic, &second, &partition, &consumerId, &eventName, &operation, &value) {
+	var value int64
+	var cnt int64
+	for data.Scan(&topic, &second, &partition, &consumerId, &eventName, &operation, &cnt, &value) {
 		event := Event{
 			Topic:      topic,
 			Second:     second,
@@ -81,16 +105,26 @@ func (this *EventFetcher) EventHistory() []Event {
 			ConsumerId: consumerId,
 			EventName:  eventName,
 			Operation:  operation,
+			Cnt: cnt,
 			Value:      value,
 		}
 		events = append(events, event)
-		this.lastSeen = event.Second
+	}
+	if err := data.Close(); err != nil {
+		log.Fatal(err)
 	}
 	return events
 }
 
 func (this *EventFetcher) startFetch() {
-	for _ = range time.Tick(1 * time.Second) {
-		this.FetchEvents()
-	}
+	topicCount := make(map[string]int)
+	topicCount[fmt.Sprintf("mirror_%s-latencies", this.config.Topic)] = 1
+	this.consumer.StartStatic(topicCount)
+}
+
+type EventFetcherConfig struct {
+	CassandraHost string
+	Topic string
+	ZkConnect string
+	SchemaRegistryUrl string
 }

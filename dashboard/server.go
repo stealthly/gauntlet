@@ -4,8 +4,9 @@ import (
 	"encoding/json"
 	"log"
 	"net/http"
-
+	"fmt"
 	"github.com/gorilla/websocket"
+	"os"
 )
 
 func (this *App) setHandlers() {
@@ -58,8 +59,12 @@ func (this *App) eventsHandler(w http.ResponseWriter, req *http.Request) {
 
 func (this *App) eventSender() {
 	for {
-		message := <-this.eventFetcher.events
-		this.sendToAll(message)
+		if len(this.connections) == 0 {
+			<-this.eventFetcher.events
+		} else {
+			message := <-this.eventFetcher.events
+			this.sendToAll(message)
+		}
 	}
 }
 
@@ -69,8 +74,9 @@ func (this *App) sendToAll(message *Event) {
 	}
 }
 
-func startWebServer() {
-	err := http.ListenAndServe("localhost:8080", nil)
+func startWebServer(port int) {
+	hostName, _ := os.Hostname()
+	err := http.ListenAndServe(fmt.Sprintf("%s:8080", hostName), nil)
 	if err != nil {
 		log.Fatal(err)
 	}
