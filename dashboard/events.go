@@ -52,7 +52,7 @@ func (this *EventFetcher) createConsumer() *kafka.Consumer {
 	coordinatorConfig.ZookeeperConnect = []string{this.config.ZkConnect}
 	coordinator := kafka.NewZookeeperCoordinator(coordinatorConfig)
 	consumerConfig := kafka.DefaultConsumerConfig()
-	consumerConfig.AutoOffsetReset = kafka.SmallestOffset
+	consumerConfig.AutoOffsetReset = kafka.LargestOffset
 	consumerConfig.Coordinator = coordinator
 	consumerConfig.Groupid = "event-dashboard"
 	consumerConfig.ValueDecoder = kafka.NewKafkaAvroDecoder(this.config.SchemaRegistryUrl)

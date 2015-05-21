@@ -76,7 +76,7 @@ func (this *App) sendToAll(message *Event) {
 
 func startWebServer(port int) {
 	hostName, _ := os.Hostname()
-	err := http.ListenAndServe(fmt.Sprintf("%s:8080", hostName), nil)
+	err := http.ListenAndServe(fmt.Sprintf("%s:%d", hostName, port), nil)
 	if err != nil {
 		log.Fatal(err)
 	}
