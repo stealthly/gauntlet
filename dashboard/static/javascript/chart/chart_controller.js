@@ -43,6 +43,7 @@
     };
 
     $scope.addEvent = function(event) {
+      event.time = new Date(event.second * 1000);
       for (var i=0; i<$scope.fields.length; i++){
         var chartId = event.consumerId + $scope.fields[i];
         if (!$scope.charts[chartId]) {
@@ -102,7 +103,8 @@
 
         chart.xAxis = d3.svg.axis()
             .scale(chart.x)
-            .orient("bottom");
+            .orient("bottom")
+            .tickFormat(function(d){return d3.time.format('%X')(new Date(d));});
 
         chart.yAxis = d3.svg.axis()
             .scale(chart.y)
@@ -110,7 +112,7 @@
 
         chart.line = d3.svg.line()
             .interpolate("basis")
-            .x(function(d) { return chart.x(d.second); })
+            .x(function(d) { return chart.x(d.time); })
             .y(function(d) { return chart.y(d[chart.field]); });
 
         chart.svg = d3.select("#chart_" + chart.field + "_" + chart.consumerId)
@@ -122,7 +124,7 @@
       }
 
       chart.x.domain(d3.extent(chart.allEvents, function(d) {
-        return d.second;
+        return d.time;
       }));
       chart.y.domain(d3.extent(chart.allEvents, function(d) {
         return d[chart.field];
