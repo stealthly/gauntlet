@@ -175,7 +175,7 @@
             .datum(chart.events[partition])
             .attr("class", "line")
             .attr("d", chart.line)
-            .style("stroke", "steelblue"/*function(d) { return color(partition) }*/);
+            .style("stroke", function(d) { return color(partition) });
         path.on("mouseover", styling);
         path.on("mouseout", unstyling);
       }
