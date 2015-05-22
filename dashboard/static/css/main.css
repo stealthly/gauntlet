@@ -11,6 +11,14 @@
 
 .line {
   fill: none;
-  stroke-width: 0.5px;
+  stroke-width: 2.5px;
 }
 
+.tooltip {
+  position: absolute;
+  background: lightsteelblue;
+  border: 1px;
+  padding: 5px;
+  border-radius: 8px;
+  opacity: 0;
+}
