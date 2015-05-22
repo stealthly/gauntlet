@@ -109,6 +109,7 @@
             .orient("left");
 
         chart.line = d3.svg.line()
+            .interpolate("basis")
             .x(function(d) { return chart.x(d.second); })
             .y(function(d) { return chart.y(d[chart.field]); });
 
