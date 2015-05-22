@@ -109,7 +109,7 @@ func (this *EventFetcher) EventHistory() []Event {
 			Cnt:        cnt,
 			Value:      value,
 		}
-		if operation == "avg10sec" {
+		if operation == "avg10second" {
 			events = append(events, event)
 		}
 	}

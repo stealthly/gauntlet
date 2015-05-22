@@ -63,7 +63,7 @@ func (this *App) eventSender() {
 			<-this.eventFetcher.events
 		} else {
 			message := <-this.eventFetcher.events
-			if message.Operation == "avg10sec" {
+			if message.Operation == "avg10second" {
 				this.sendToAll(message)
 			}
 		}
