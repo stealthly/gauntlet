@@ -158,7 +158,7 @@
         tooltip.transition()
           .duration(50)
           .style("opacity", 0.9);
-        path.style("stroke-width", "5px");
+        d3.select(this).style("stroke-width", "5px");
         tooltip.html("<p>Partition: " + d[0].partition + "</p><p>Topic: " + d[0].topic + "</p>")
           .style("left", d3.event.pageX + "px")
           .style("top", (d3.event.pageY - 28) + "px");
@@ -167,7 +167,7 @@
         tooltip.transition()
           .duration(2000)
           .style("opacity", 0);
-        path.style("stroke-width", "2.5px");
+        d3.select(this).style("stroke-width", "2.5px");
       };
 
       for (var partition in chart.events) {
