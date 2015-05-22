@@ -1,6 +1,6 @@
 package ly.stealth.latencies
 
-import java.util.Properties
+import java.util.{UUID, Properties}
 
 import _root_.kafka.serializer.DefaultDecoder
 import com.datastax.spark.connector._
@@ -13,6 +13,7 @@ import org.apache.avro.util.Utf8
 import org.apache.kafka.clients.producer.{ProducerRecord, KafkaProducer}
 import org.apache.kafka.clients.producer.ProducerConfig._
 import org.apache.spark.SparkConf
+import org.apache.spark.storage.StorageLevel
 import org.apache.spark.streaming._
 import org.apache.spark.streaming.dstream.DStream
 import org.apache.spark.streaming.kafka._
@@ -23,6 +24,9 @@ object Main extends App {
     opt[String]("topic") unbounded() required() action { (value, config) =>
       config.copy(topic = value)
     } text ("Topic to read data from")
+    opt[String]("zookeeper") unbounded() required() action { (value, config) =>
+      config.copy(zookeeper = value)
+    } text ("Zookeeper connection string - host:port")
     opt[String]("broker.list") unbounded() required() action { (value, config) =>
       config.copy(brokerList = value)
     } text ("Comma separated string of host:port")
@@ -52,7 +56,9 @@ object Main extends App {
     session.execute("CREATE TABLE IF NOT EXISTS spark_analysis.events(topic text, partition text, consumerid text, eventname text, second int, operation text, value int, cnt int, PRIMARY KEY(topic, second, partition, consumerid, eventname, operation))")
   })
 
-  val consumerConfig = Map("metadata.broker.list" -> appConfig.brokerList,
+  val consumerConfig = Map(
+    "group.id" -> "spark-analysis-%s".format(UUID.randomUUID.toString),
+    "zookeeper.connect" -> appConfig.zookeeper,
     "auto.offset.reset" -> "smallest",
     "schema.registry.url" -> appConfig.schemaRegistryUrl)
   val producerConfig = new Properties()
@@ -67,7 +73,7 @@ object Main extends App {
   ssc.awaitTermination()
 
   def start(ssc: StreamingContext, consumerConfig: Map[String, String], producerConfig: Properties, topic: String) = {
-    val stream = KafkaUtils.createDirectStream[Array[Byte], SchemaAndData, DefaultDecoder, AvroDecoder](ssc, consumerConfig, Set(topic)).persist()
+    val stream = KafkaUtils.createStream[Array[Byte], SchemaAndData, DefaultDecoder, AvroDecoder](ssc, consumerConfig, Map(topic -> 2), StorageLevel.MEMORY_ONLY_SER).persist()
     calculateAverages(stream, "second", 10, topic, producerConfig)
     calculateAverages(stream, "second", 30, topic, producerConfig)
     calculateAverages(stream, "minute", 1, topic, producerConfig)
@@ -137,4 +143,4 @@ object Main extends App {
 }
 
 case class Event(topic: String, partition: String, consumerid: String, eventname: String, second: Long, operation: String, value: Long, cnt: Long)
-case class AppConfig(topic: String = "", brokerList: String = "", schemaRegistryUrl: String = "")
+case class AppConfig(topic: String = "", brokerList: String = "", zookeeper: String = "", schemaRegistryUrl: String = "")
