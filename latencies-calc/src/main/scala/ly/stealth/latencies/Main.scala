@@ -59,7 +59,7 @@ object Main extends App {
   val consumerConfig = Map(
     "group.id" -> "spark-analysis-%s".format(UUID.randomUUID.toString),
     "zookeeper.connect" -> appConfig.zookeeper,
-    "auto.offset.reset" -> "smallest",
+    "auto.offset.reset" -> "largest",
     "schema.registry.url" -> appConfig.schemaRegistryUrl)
   val producerConfig = new Properties()
   producerConfig.put(BOOTSTRAP_SERVERS_CONFIG, appConfig.brokerList)
