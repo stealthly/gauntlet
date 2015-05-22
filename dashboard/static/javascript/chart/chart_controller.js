@@ -1,11 +1,11 @@
 (function () {
   'use strict';
 
-  angular.module('dashboardApp').controller('ChartController', ['$scope', 'events', function($scope, events) {
+  angular.module('dashboardApp').controller('ChartController', ['$scope', '$timeout', 'events', function($scope, $timeout, events) {
     $scope.fields = ["value", "count"];
 
     $scope.startFetching = function() {
-      var conn = new WebSocket("ws://localhost:8080/events");
+      var conn = new WebSocket("ws://" + window.location.host + "/events");
 
       conn.onclose = function() {
         console.log("Connection closed.");
@@ -43,7 +43,6 @@
     };
 
     $scope.addEvent = function(event) {
-      console.log(event);
       for (var i=0; i<$scope.fields.length; i++){
         var chartId = event.consumerId + $scope.fields[i];
         if (!$scope.charts[chartId]) {
@@ -76,6 +75,18 @@
       $scope.startFetching();
     });
 
+    $scope.render = function(last) {
+      if (last) {
+        $timeout(function() {
+          for(var chartId in $scope.charts) {
+            $scope.charts[chartId].rendered = false;
+            $scope.charts[chartId].init = false;
+            $scope.drawChart(chartId);
+          }
+        }, 0);
+      }
+    }
+
     $scope.drawChart = function(chartId) {
       var chart = $scope.charts[chartId];
       if (!chart.init) {
@@ -106,7 +117,6 @@
             .attr("height", chart.height + chart.margin.top + chart.margin.bottom)
           .append("g")
             .attr("transform", "translate(" + chart.margin.left + "," + chart.margin.top + ")");
-
         chart.init = true;
       }
 
@@ -138,13 +148,33 @@
         partitions[i] = (i+1).toString();
       }
 
+      var tooltip = d3.select(".tooltip");
+
       for (var partition in chart.events) {
         color.domain(partitions);
-        chart.svg.append("path")
+        var path = chart.svg.append("path")
             .datum(chart.events[partition])
             .attr("class", "line")
             .attr("d", chart.line)
-            .style("stroke", function(d) { return color(partition) });
+            .style("stroke", "steelblue"/*function(d) { return color(partition) }*/);
+        path.on("mouseover", function(d){
+          tooltip.transition()
+            .duration(300)
+            .style("opacity", 0);
+          tooltip.transition()
+            .duration(50)
+            .style("opacity", .9);
+          path.style("stroke-width", "5px");
+          tooltip.html("<p>Partition: " + d[0].partition + "</p><p>Topic: " + d[0].topic + "</p>")
+            .style("left", d3.event.pageX + "px")
+            .style("top", (d3.event.pageY - 28) + "px");
+        });
+        path.on("mouseout", function(){
+          tooltip.transition()
+            .duration(2000)
+            .style("opacity", 0);
+          path.style("stroke-width", "2.5px");
+        });
       };
 
       $scope.charts[chartId] = chart;
