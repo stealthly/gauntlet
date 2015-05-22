@@ -73,7 +73,7 @@ object Main extends App {
   ssc.awaitTermination()
 
   def start(ssc: StreamingContext, consumerConfig: Map[String, String], producerConfig: Properties, topic: String) = {
-    val stream = KafkaUtils.createStream[Array[Byte], SchemaAndData, DefaultDecoder, AvroDecoder](ssc, consumerConfig, Map(topic -> 2), StorageLevel.MEMORY_ONLY_SER).persist()
+    val stream = KafkaUtils.createStream[Array[Byte], SchemaAndData, DefaultDecoder, AvroDecoder](ssc, consumerConfig, Map(topic -> 2), StorageLevel.MEMORY_AND_DISK_SER).persist()
     calculateAverages(stream, "second", 10, topic, producerConfig)
     calculateAverages(stream, "second", 30, topic, producerConfig)
     calculateAverages(stream, "minute", 1, topic, producerConfig)
