@@ -3,6 +3,7 @@
 
   angular.module('dashboardApp').controller('ChartController', ['$scope', '$timeout', 'events', function($scope, $timeout, events) {
     $scope.fields = ["value", "count"];
+    $scope.loaded = false;
 
     $scope.startFetching = function() {
       var conn = new WebSocket("ws://" + window.location.host + "/events");
@@ -68,6 +69,8 @@
           $scope.addEvent(event);
         });
       }
+
+      $scope.loaded = true;
 
       for(var chartId in $scope.charts) {
         $scope.drawChart(chartId);

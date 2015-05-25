@@ -10,6 +10,9 @@
       <a class="navbar-brand" href="/">Dashboard</a>
     </nav>
     <div id="chart" ng-controller="ChartController">
+      <div class="spinner text-center" ng-show="loaded == false">
+        <span class="glyphicon glyphicon-refresh spin"></span>
+      </div>
       <app-chart></app-chart>
     </div>
   </div>
