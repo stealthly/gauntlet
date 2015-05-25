@@ -1,0 +1,8 @@
+<div id="charts">
+  <div class="tooltip"></div>
+  <div ng-repeat="(chartId, chart) in charts" ng-init="render($last)" class="col-md-12">
+    <h3>Consumer {{chart.consumerId}} - {{chart.field}}</h2>
+    <svg id="chart_{{chart.field}}_{{chart.consumerId}}"></svg>
+  </div>
+</div>
+
